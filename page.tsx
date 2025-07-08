@@ -839,9 +839,17 @@ export default function ActogramChat() {
     })
   }
 
+  // Функция для сохранения настроек
   const saveSettings = () => {
-    const settings = { darkMode, language, notifications, theme: selectedTheme }
-    localStorage.setItem("actogram_settings", JSON.stringify(settings))
+    localStorage.setItem(
+      "actogram_settings",
+      JSON.stringify({
+        darkMode,
+        language,
+        notifications,
+        theme: selectedTheme,
+      })
+    )
   }
 
   const handleInputChange = (field: string, value: string) => {
