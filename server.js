@@ -808,6 +808,10 @@ io.on("connection", async (socket) => {
     for (const chat of userChats) {
       socket.join(chat._id.toString())
     }
+    
+    // Всегда присоединяем к глобальному чату
+    socket.join("global")
+    console.log(`🌍 ${user.username} присоединен к глобальному чату`)
   } catch (error) {
     console.error("Error joining user chats:", error)
   }
@@ -1179,6 +1183,12 @@ io.on("connection", async (socket) => {
       // Отправляем сообщение всем участникам чата
       io.to(chat._id.toString()).emit("new_message", msgObj)
       
+      // Для глобального чата также отправляем всем подключенным пользователям
+      if (isGlobalChat) {
+        console.log(`🌍 Отправка сообщения во все подключения для глобального чата`)
+        io.emit("new_message", msgObj)
+      }
+      
       // Если чат приватный, отправить событие 'new_private_chat' второму участнику
       if (chat.type === "private") {
         chat.participants.forEach((participantId) => {
@@ -1277,12 +1287,63 @@ io.on("connection", async (socket) => {
     try {
       const chat = await Chat.findById(chatId)
       if (!chat) return
-      if (!chat.participants.filter(p => p !== null).map((id) => id.toString()).includes(user.id) && chat.createdBy?.toString() !== user.id) return
+      
+      // Проверяем права для глобального чата
+      const isGlobalChat = chatId === "global"
+      const isAdmin = user.username === "@adminstator"
+      const isParticipant = chat.participants.filter(p => p !== null).map((id) => id.toString()).includes(user.id)
+      const isCreator = chat.createdBy?.toString() === user.id
+      
+      if (isGlobalChat && !isAdmin) {
+        socket.emit("error", { message: "Только администратор может очищать глобальный чат" })
+        return
+      }
+      
+      if (!isParticipant && !isCreator && !isGlobalChat) {
+        socket.emit("error", { message: "Нет прав для очистки этого чата" })
+        return
+      }
+      
       await Message.deleteMany({ chat: chatId })
       io.to(chatId).emit("chat_cleared", { chatId })
       console.log(`🧹 Чат ${chatId} очищен пользователем ${user.username}`)
     } catch (error) {
       console.error("clear_chat error:", error)
+    }
+  })
+
+  // Обновление настроек чата
+  socket.on("update_chat_settings", async (data) => {
+    try {
+      const { chatId, isPinned, isMuted } = data
+      const chat = await Chat.findById(chatId)
+      if (!chat) return
+      
+      // Проверяем права
+      const isParticipant = chat.participants.filter(p => p !== null).map((id) => id.toString()).includes(user.id)
+      const isCreator = chat.createdBy?.toString() === user.id
+      
+      if (!isParticipant && !isCreator) {
+        socket.emit("error", { message: "Нет прав для изменения настроек чата" })
+        return
+      }
+      
+      const updateData = {}
+      if (isPinned !== undefined) updateData.isPinned = isPinned
+      if (isMuted !== undefined) updateData.isMuted = isMuted
+      
+      await Chat.findByIdAndUpdate(chatId, updateData)
+      
+      // Уведомляем всех участников чата об изменении
+      io.to(chatId).emit("chat_settings_updated", {
+        chatId,
+        isPinned,
+        isMuted
+      })
+      
+      console.log(`⚙️ Настройки чата ${chatId} обновлены пользователем ${user.username}`)
+    } catch (error) {
+      console.error("update_chat_settings error:", error)
     }
   })
 
