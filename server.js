@@ -133,6 +133,8 @@ const activeConnections = new Map() // socketId -> userId
 const typingUsers = new Map() // chatId -> Set of userIds
 const blockedUsers = new Map() // userId -> Set of blocked userIds
 const userHeartbeats = new Map() // userId -> lastHeartbeat timestamp
+// Rate limiting для общего чата
+const globalChatRateLimit = new Map(); // userId -> [timestamps]
 
 // Middleware для проверки JWT
 const authenticateToken = (req, res, next) => {
@@ -199,6 +201,31 @@ async function ensureBotUser() {
   botUserId = bot._id.toString()
   return botUserId
 }
+
+// Создание глобального чата (если его нет)
+async function ensureGlobalChat() {
+  const globalChatId = "global";
+  let chat = await Chat.findById(globalChatId);
+  if (!chat) {
+    chat = await Chat.create({
+      _id: globalChatId,
+      name: "ACTO — Общий чат",
+      avatar: null,
+      description: "Глобальный чат для всех пользователей",
+      isGroup: true,
+      participants: [], // Можно оставить пустым, чтобы не было ограничений
+      createdAt: new Date(),
+      type: "group",
+      isEncrypted: false,
+      createdBy: null,
+      theme: "default",
+      isPinned: true,
+      isMuted: false,
+    });
+    console.log("🌍 Глобальный чат создан!");
+  }
+}
+ensureGlobalChat();
 
 // Главная страница
 app.get("/", (req, res) => {
@@ -662,6 +689,19 @@ app.get("/api/chats", authenticateToken, async (req, res) => {
         }
       })
     )
+    const globalChat = await Chat.findById("global").lean();
+    if (globalChat) {
+      if (!chatList.find(chat => chat.id === "global")) {
+        chatList.unshift({
+          ...globalChat,
+          id: globalChat._id?.toString() || globalChat._id,
+          participants: globalChat.participants || [],
+          lastMessage: null,
+          messageCount: 0,
+          unreadCount: 0,
+        });
+      }
+    }
     res.json(chatList)
   } catch (error) {
     console.error("/api/chats error:", error)
