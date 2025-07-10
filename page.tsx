@@ -1,5 +1,6 @@
 "use client"
 
+import React from "react"
 import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -360,7 +361,7 @@ export default function ActogramChat() {
   const [activeUsers, setActiveUsers] = useState<User[]>([])
   const [typingUsers, setTypingUsers] = useState<string[]>([])
   const [language, setLanguage] = useState<"uz" | "ru" | "en">("uz")
-  const [darkMode, setDarkMode] = useState(false)
+  const [darkMode, setDarkMode] = useState(true)
   const [notifications, setNotifications] = useState(true)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
@@ -375,6 +376,8 @@ export default function ActogramChat() {
   const [selectedTheme, setSelectedTheme] = useState("default")
   const [uploadProgress, setUploadProgress] = useState(0)
   const [isRecording, setIsRecording] = useState(false)
+  const [showChatInfoDialog, setShowChatInfoDialog] = useState(false)
+  const [selectedChatForInfo, setSelectedChatForInfo] = useState<Chat | null>(null)
 
   // Refs
   const socketRef = useRef<Socket | null>(null)
@@ -402,7 +405,7 @@ export default function ActogramChat() {
     const savedSettings = localStorage.getItem("actogram_settings")
     if (savedSettings) {
       const settings = JSON.parse(savedSettings)
-      setDarkMode(settings.darkMode || false)
+      setDarkMode(settings.darkMode !== undefined ? settings.darkMode : true)
       setLanguage(settings.language || "uz")
       setNotifications(settings.notifications !== false)
       setSelectedTheme(settings.theme || "default")
@@ -464,7 +467,24 @@ export default function ActogramChat() {
         message.content = decryptMessage(message.content)
         console.log("🔓 Расшифрованное сообщение:", message.content)
       }
-      setMessages((prev) => [...prev, message])
+      
+      // Проверяем, не является ли это дубликатом оптимистичного сообщения
+      setMessages((prev) => {
+        const isDuplicate = prev.some(m => 
+          m.id === message.id || 
+          (m.senderId === message.senderId && 
+           m.content === message.content && 
+           Math.abs(new Date(m.timestamp).getTime() - new Date(message.timestamp).getTime()) < 5000)
+        )
+        
+        if (isDuplicate) {
+          console.log("🔄 Пропускаем дубликат сообщения")
+          return prev
+        }
+        
+        return [...prev, message]
+      })
+      
       updateChatLastMessage(message)
       if (notifications && message.senderId !== currentUser.id) {
         showNotification(message.senderName, message.content)
@@ -477,6 +497,30 @@ export default function ActogramChat() {
 
     socket.on("message_deleted", (messageId: string) => {
       setMessages((prev) => prev.filter((m) => m.id !== messageId))
+    })
+
+    socket.on("chat_cleared", (data: { chatId: string }) => {
+      if (selectedChat?.id === data.chatId) {
+        setMessages([])
+        setSuccess("Чат очищен")
+      }
+    })
+
+    socket.on("chat_settings_updated", (data: { chatId: string; isPinned?: boolean; isMuted?: boolean }) => {
+      setChats(prev => prev.map(chat => {
+        if (chat.id === data.chatId) {
+          return {
+            ...chat,
+            isPinned: data.isPinned !== undefined ? data.isPinned : chat.isPinned,
+            isMuted: data.isMuted !== undefined ? data.isMuted : chat.isMuted
+          }
+        }
+        return chat
+      }))
+    })
+
+    socket.on("error", (data: { message: string }) => {
+      setError(data.message)
     })
 
     socket.on("user_typing", (data: { userId: string; username: string; chatId: string }) => {
@@ -538,6 +582,19 @@ export default function ActogramChat() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
+
+  // Сохраняем настройки при каждом изменении
+  useEffect(() => {
+    localStorage.setItem(
+      "actogram_settings",
+      JSON.stringify({
+        darkMode,
+        language,
+        notifications,
+        theme: selectedTheme,
+      })
+    )
+  }, [darkMode, language, notifications, selectedTheme])
 
   // Функции
   const showNotification = (title: string, body: string) => {
@@ -738,6 +795,34 @@ export default function ActogramChat() {
     }
 
     console.log("📤 Данные сообщения для отправки:", messageData)
+    
+    // Для глобального чата добавляем оптимистичное обновление
+    if (selectedChat.id === "global") {
+      const optimisticMessage = {
+        id: Date.now().toString(),
+        senderId: currentUser.id,
+        senderName: currentUser.username,
+        content: newMessage.trim(),
+        chatId: selectedChat.id,
+        timestamp: new Date(),
+        type: "text",
+        isEncrypted: false, // Не шифруем для отображения
+        replyTo: replyingTo
+          ? {
+              id: replyingTo.id,
+              content: replyingTo.content,
+              senderName: replyingTo.senderName,
+            }
+          : undefined,
+      }
+      
+      // Добавляем сообщение сразу в UI
+      setMessages((prev) => [...prev, optimisticMessage])
+      
+      // Обновляем последнее сообщение в списке чатов
+      updateChatLastMessage(optimisticMessage)
+    }
+    
     socketRef.current.emit("send_message", messageData)
     setNewMessage("")
     setReplyingTo(null)
@@ -753,6 +838,8 @@ export default function ActogramChat() {
     if (socketRef.current) {
       socketRef.current.emit("join_chat", chat.id)
     }
+    // ВАЖНО: выводим участников в консоль для отладки
+    console.log("Участники выбранного чата:", chat.participants)
   }
 
   const startTyping = () => {
@@ -787,6 +874,7 @@ export default function ActogramChat() {
 
   const startPrivateChat = (user: User) => {
     if (!currentUser || !socketRef.current) return
+    if (user.id === currentUser.id) return // Нельзя создавать чат с самим собой!
 
     const chatId = `private_${[currentUser.id, user.id].sort().join("_")}`
     const existingChat = chats.find((chat) => chat.id === chatId)
@@ -799,7 +887,7 @@ export default function ActogramChat() {
 
     const newChat: Chat = {
       id: chatId,
-              name: user.username,
+      name: user.username,
       avatar: user.avatar,
       isGroup: false,
       participants: [currentUser, user],
@@ -826,6 +914,14 @@ export default function ActogramChat() {
       chatId,
       createdBy: currentUser.id,
     })
+
+    // Автоматически отправляем приветственное сообщение, чтобы чат появился у обоих
+    socketRef.current.emit("send_message", {
+      content: encryptMessage("Salom!"),
+      chatId,
+      type: "text",
+      isEncrypted: true,
+    })
   }
 
   const addReaction = (messageId: string, emoji: string) => {
@@ -837,6 +933,59 @@ export default function ActogramChat() {
       userId: currentUser.id,
       username: currentUser.username,
     })
+  }
+
+  // Функции для работы с чатами
+  const showChatInfo = (chat: Chat | null) => {
+    if (!chat) return
+    setSelectedChatForInfo(chat)
+    setShowChatInfoDialog(true)
+  }
+
+  const togglePinChat = (chat: Chat | null) => {
+    if (!chat || !socketRef.current) return
+    
+    const newPinnedState = !chat.isPinned
+    setChats(prev => prev.map(c => 
+      c.id === chat.id ? { ...c, isPinned: newPinnedState } : c
+    ))
+    
+    // Отправляем на сервер
+    socketRef.current.emit("update_chat_settings", {
+      chatId: chat.id,
+      isPinned: newPinnedState
+    })
+  }
+
+  const toggleMuteChat = (chat: Chat | null) => {
+    if (!chat || !socketRef.current) return
+    
+    const newMutedState = !chat.isMuted
+    setChats(prev => prev.map(c => 
+      c.id === chat.id ? { ...c, isMuted: newMutedState } : c
+    ))
+    
+    // Отправляем на сервер
+    socketRef.current.emit("update_chat_settings", {
+      chatId: chat.id,
+      isMuted: newMutedState
+    })
+  }
+
+  const clearChat = (chat: Chat | null) => {
+    if (!chat || !socketRef.current) return
+    
+    // Проверяем права для глобального чата
+    if (chat.id === "global" && currentUser?.username !== "@adminstator") {
+      setError("Только администратор может очищать глобальный чат")
+      return
+    }
+    
+    if (confirm("Вы уверены, что хотите очистить этот чат? Это действие нельзя отменить.")) {
+      socketRef.current.emit("clear_chat", chat.id)
+      setMessages([])
+      setSuccess("Чат очищен")
+    }
   }
 
   // Функция для сохранения настроек
@@ -1163,10 +1312,13 @@ export default function ActogramChat() {
                       <TabsContent value="profile" className="space-y-4">
                         <div className="flex items-center gap-4">
                           <Avatar className="h-16 w-16">
-                            <AvatarImage src={currentUser?.avatar || "/placeholder.svg"} />
-                            <AvatarFallback className="text-lg bg-gradient-to-br from-blue-500 to-purple-600 text-white">
-                              {currentUser?.username?.charAt(1)}
-                            </AvatarFallback>
+                            {currentUser?.avatar ? (
+                              <AvatarImage src={currentUser.avatar} />
+                            ) : (
+                              <AvatarFallback className="text-lg bg-gradient-to-br from-blue-500 to-purple-600 text-white">
+                                {currentUser?.username?.charAt(1) || currentUser?.fullName?.charAt(0) || "?"}
+                              </AvatarFallback>
+                            )}
                           </Avatar>
                           <div className="flex-1">
                             <h3 className="font-semibold">{currentUser?.fullName}</h3>
@@ -1276,10 +1428,13 @@ export default function ActogramChat() {
                         className={`flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer transition-all duration-200 ${buttonStyle}`}
                       >
                         <Avatar>
-                          <AvatarImage src={user.avatar || "/placeholder.svg"} />
-                          <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white">
-                            {user.username?.charAt(1)}
-                          </AvatarFallback>
+                          {user.avatar ? (
+                            <AvatarImage src={user.avatar} />
+                          ) : (
+                            <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white">
+                              {user.username?.charAt(1) || user.fullName?.charAt(0) || "?"}
+                            </AvatarFallback>
+                          )}
                         </Avatar>
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
@@ -1313,14 +1468,23 @@ export default function ActogramChat() {
                 <div className="flex items-center gap-3">
                   <div className="relative">
                     <Avatar className="h-12 w-12">
-                      <AvatarImage src={chat.avatar || "/placeholder.svg"} />
-                      <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white">
-                        {chat.isGroup ? <Users className="h-5 w-5" /> : chat.name.charAt(0)}
-                      </AvatarFallback>
+                      {chat.avatar ? (
+                        <AvatarImage src={chat.avatar} />
+                      ) : (
+                        <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white">
+                          {chat.isGroup ? <Users className="h-5 w-5" /> : chat.name.charAt(0)}
+                        </AvatarFallback>
+                      )}
                     </Avatar>
-                    {!chat.isGroup && (
-                      <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-white dark:border-gray-800 rounded-full" />
-                    )}
+                    {!chat.isGroup && (() => {
+                      // Найти собеседника
+                      const otherUser = chat.participants.find(
+                        (u) => u.id !== currentUser?.id && u.username !== currentUser?.username
+                      );
+                      return otherUser?.isOnline ? (
+                        <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-white dark:border-gray-800 rounded-full" />
+                      ) : null;
+                    })()}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
@@ -1329,10 +1493,12 @@ export default function ActogramChat() {
                         {(() => {
                           const isPrivate = chat.type === "private"
                           const otherUser = isPrivate
-                            ? chat.participants.find((u) => u.id !== currentUser?.id)
+                            ? chat.participants.find((u) =>
+                                u.id !== currentUser?.id && u.username !== currentUser?.username
+                              )
                             : null
                           const chatDisplayName = isPrivate
-                            ? otherUser?.username || "Неизвестно"
+                            ? otherUser?.username || otherUser?.fullName || chat.name || "Неизвестно"
                             : chat.name
                           return <h3 className="font-medium truncate">{chatDisplayName}</h3>
                         })()}
@@ -1355,10 +1521,6 @@ export default function ActogramChat() {
                     )}
                     <div className="flex items-center justify-between mt-1">
                       <div className="text-xs text-gray-500 flex items-center gap-2">
-                        <span>
-                          {chat.participants.length} {t.members}
-                        </span>
-                        <span>•</span>
                         <span>
                           {chat.messageCount} {t.messages}
                         </span>
@@ -1387,35 +1549,46 @@ export default function ActogramChat() {
                     </Button>
                   )}
                   <Avatar className="h-10 w-10">
-                    <AvatarImage 
-                      src={
-                        selectedChat.type === "private" 
-                          ? (() => {
-                              const otherUser = selectedChat.participants.find((u) => u.id !== currentUser?.id)
-                              return otherUser?.avatar || selectedChat.avatar || "/placeholder.svg"
-                            })()
-                          : selectedChat.avatar || "/placeholder.svg"
-                      } 
-                    />
-                    <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white">
-                      {selectedChat.isGroup ? (
-                        <Users className="h-5 w-5" />
-                      ) : (
-                        (() => {
-                          const otherUser = selectedChat.participants.find((u) => u.id !== currentUser?.id)
-                          const displayName = otherUser?.username || selectedChat.name
-                          return displayName.charAt(0)
-                        })()
-                      )}
-                    </AvatarFallback>
+                    {(() => {
+                      const avatarSrc = selectedChat.type === "private" 
+                        ? (() => {
+                            const otherUser = selectedChat.participants.find(
+                              (u) => u.id !== currentUser?.id && u.username !== currentUser?.username
+                            )
+                            return otherUser?.avatar
+                          })()
+                        : selectedChat.avatar
+                      
+                      if (avatarSrc) {
+                        return <AvatarImage src={avatarSrc} />
+                      } else {
+                        return (
+                          <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white">
+                            {selectedChat.isGroup ? (
+                              <Users className="h-5 w-5" />
+                            ) : (
+                              (() => {
+                                const otherUser = selectedChat.participants.find(
+                                  (u) => u.id !== currentUser?.id && u.username !== currentUser?.username
+                                )
+                                const displayName = otherUser?.username || otherUser?.fullName || selectedChat.name
+                                return displayName.charAt(0)
+                              })()
+                            )}
+                          </AvatarFallback>
+                        )
+                      }
+                    })()}
                   </Avatar>
                   <div>
                     <div className="flex items-center gap-2">
                       <h2 className="font-semibold">
                         {selectedChat.type === "private" 
                           ? (() => {
-                              const otherUser = selectedChat.participants.find((u) => u.id !== currentUser?.id)
-                              return otherUser?.username || selectedChat.name
+                              const otherUser = selectedChat.participants.find(
+                                (u) => u.id !== currentUser?.id && u.username !== currentUser?.username
+                              )
+                              return otherUser?.username || otherUser?.fullName || selectedChat.name
                             })()
                           : selectedChat.name
                         }
@@ -1424,7 +1597,9 @@ export default function ActogramChat() {
                     </div>
                     <p className="text-sm text-gray-500">
                       {selectedChat.isGroup
-                        ? `${selectedChat.participants.length} ${t.members}`
+                        ? typingUsers.length > 0
+                          ? `${typingUsers.join(", ")} ${t.typing}`
+                          : t.online
                         : typingUsers.length > 0
                           ? `${typingUsers.join(", ")} ${t.typing}`
                           : t.online}
@@ -1445,23 +1620,28 @@ export default function ActogramChat() {
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className={cardStyle}>
-                      <DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => showChatInfo(selectedChat)}>
                         <Info className="h-4 w-4 mr-2" />
                         Информация о чате
                       </DropdownMenuItem>
-                      <DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => togglePinChat(selectedChat)}>
                         <Star className="h-4 w-4 mr-2" />
-                        Закрепить чат
+                        {selectedChat?.isPinned ? "Открепить чат" : "Закрепить чат"}
                       </DropdownMenuItem>
-                      <DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => toggleMuteChat(selectedChat)}>
                         <Bell className="h-4 w-4 mr-2" />
-                        Отключить уведомления
+                        {selectedChat?.isMuted ? "Включить уведомления" : "Отключить уведомления"}
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem className="text-red-600">
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        Очистить чат
-                      </DropdownMenuItem>
+                      {(selectedChat?.id !== "global" || currentUser?.username === "@adminstator") && (
+                        <DropdownMenuItem 
+                          className="text-red-600"
+                          onClick={() => clearChat(selectedChat)}
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Очистить чат
+                        </DropdownMenuItem>
+                      )}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
@@ -1707,6 +1887,95 @@ export default function ActogramChat() {
           )}
         </div>
       </div>
+      
+      {/* Диалог информации о чате */}
+      <Dialog open={showChatInfoDialog} onOpenChange={setShowChatInfoDialog}>
+        <DialogContent className={cardStyle}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Info className="h-5 w-5" />
+              Информация о чате
+            </DialogTitle>
+          </DialogHeader>
+          {selectedChatForInfo && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <Avatar className="h-16 w-16">
+                  {selectedChatForInfo.avatar ? (
+                    <AvatarImage src={selectedChatForInfo.avatar} />
+                  ) : (
+                    <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white">
+                      {selectedChatForInfo.isGroup ? (
+                        <Users className="h-6 w-6" />
+                      ) : selectedChatForInfo.name.charAt(0)}
+                    </AvatarFallback>
+                  )}
+                </Avatar>
+                <div>
+                  <h3 className="font-semibold text-lg">{selectedChatForInfo.name}</h3>
+                  <p className="text-sm text-gray-500">{selectedChatForInfo.description}</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    {selectedChatForInfo.isEncrypted && <Lock className="h-3 w-3 text-green-500" />}
+                    {selectedChatForInfo.isPinned && <Star className="h-3 w-3 text-yellow-500" />}
+                    {selectedChatForInfo.isMuted && <Bell className="h-3 w-3 text-red-500" />}
+                  </div>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <p className="font-medium">Тип чата</p>
+                  <p className="text-gray-500">
+                    {selectedChatForInfo.type === "private" ? "Приватный" : 
+                     selectedChatForInfo.type === "group" ? "Группа" : "Канал"}
+                  </p>
+                </div>
+                <div>
+                  <p className="font-medium">Сообщений</p>
+                  <p className="text-gray-500">{selectedChatForInfo.messageCount}</p>
+                </div>
+                <div>
+                  <p className="font-medium">Создан</p>
+                  <p className="text-gray-500">
+                    {new Date(selectedChatForInfo.createdAt).toLocaleDateString()}
+                  </p>
+                </div>
+                <div>
+                  <p className="font-medium">Шифрование</p>
+                  <p className="text-gray-500">
+                    {selectedChatForInfo.isEncrypted ? "Включено" : "Отключено"}
+                  </p>
+                </div>
+              </div>
+              
+              {selectedChatForInfo.type !== "private" && (
+                <div>
+                  <p className="font-medium mb-2">Участники</p>
+                  <div className="space-y-2 max-h-32 overflow-y-auto">
+                    {selectedChatForInfo.participants.map((participant) => (
+                      <div key={participant.id} className="flex items-center gap-2">
+                        <Avatar className="h-6 w-6">
+                          {participant.avatar ? (
+                            <AvatarImage src={participant.avatar} />
+                          ) : (
+                            <AvatarFallback className="text-xs">
+                              {participant.username?.charAt(1) || participant.fullName?.charAt(0)}
+                            </AvatarFallback>
+                          )}
+                        </Avatar>
+                        <span className="text-sm">{participant.username}</span>
+                        {participant.isOnline && (
+                          <div className="w-2 h-2 bg-green-500 rounded-full" />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
