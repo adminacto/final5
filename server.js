@@ -1070,6 +1070,23 @@ io.on("connection", async (socket) => {
       // Отправляем сообщение всем участникам чата
       io.to(chat._id.toString()).emit("new_message", msgObj)
       
+      // Если чат приватный, отправить событие 'new_private_chat' второму участнику
+      if (chat.type === "private") {
+        chat.participants.forEach((participantId) => {
+          if (participantId.toString() !== user.id) {
+            const targetSocket = Array.from(io.sockets.sockets.values()).find((s) => s.userId === participantId.toString());
+            if (targetSocket) {
+              // Проверяем, есть ли у пользователя этот чат (можно добавить проверку, если нужно)
+              targetSocket.emit("new_private_chat", {
+                ...chat,
+                id: chat._id?.toString() || chat._id,
+                participants: chat.participants,
+              });
+            }
+          }
+        });
+      }
+      
       console.log(`💬 Сообщение от ${user.username} в чат ${chat._id} отправлено успешно`)
     } catch (error) {
       console.error("send_message error:", error)
