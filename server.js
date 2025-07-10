@@ -134,7 +134,7 @@ const typingUsers = new Map() // chatId -> Set of userIds
 const blockedUsers = new Map() // userId -> Set of blocked userIds
 const userHeartbeats = new Map() // userId -> lastHeartbeat timestamp
 // Rate limiting для общего чата
-const globalChatRateLimit = new Map(); // userId -> [timestamps]
+const globalChatRateLimit = new Map(); // userId -> lastTimestamp
 
 // Middleware для проверки JWT
 const authenticateToken = (req, res, next) => {
@@ -1123,19 +1123,22 @@ io.on("connection", async (socket) => {
         return
       }
       
-      // Rate limiting для глобального чата
+      // Rate limiting для глобального чата (5 секунд между сообщениями)
       if (isGlobalChat) {
-        const now = Date.now()
-        const userRateLimit = globalChatRateLimit.get(user.id) || []
-        const recentMessages = userRateLimit.filter(timestamp => now - timestamp < 60000) // 1 минута
-        
-        if (recentMessages.length >= 5) {
-          socket.emit("error", { message: "Слишком много сообщений в общий чат. Подождите немного." })
-          return
+        const now = Date.now();
+        const lastTimestamp = globalChatRateLimit.get(user.id) || 0;
+        if (now - lastTimestamp < 5000) { // 5 секунд
+          socket.emit("error", { message: "В общий чат можно отправлять сообщение раз в 5 секунд!" });
+          return;
         }
-        
-        userRateLimit.push(now)
-        globalChatRateLimit.set(user.id, userRateLimit)
+        globalChatRateLimit.set(user.id, now);
+      }
+
+      // Ограничение на количество слов (100 слов для всех чатов)
+      const wordCount = (messageData.content ? (messageData.isEncrypted ? decryptMessage(messageData.content) : messageData.content) : "").split(/\s+/).filter(Boolean).length;
+      if (wordCount > 100) {
+        socket.emit("error", { message: "Сообщение не должно содержать более 100 слов!" });
+        return;
       }
       
       // Валидация сообщения
