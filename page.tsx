@@ -378,6 +378,7 @@ export default function ActogramChat() {
   const [isRecording, setIsRecording] = useState(false)
   const [showChatInfoDialog, setShowChatInfoDialog] = useState(false)
   const [selectedChatForInfo, setSelectedChatForInfo] = useState<Chat | null>(null)
+  const [globalChatCooldown, setGlobalChatCooldown] = useState(0)
 
   // Refs
   const socketRef = useRef<Socket | null>(null)
@@ -821,6 +822,13 @@ export default function ActogramChat() {
       
       // Обновляем последнее сообщение в списке чатов
       updateChatLastMessage(optimisticMessage)
+      setGlobalChatCooldown(5)
+      let seconds = 5
+      const interval = setInterval(() => {
+        seconds--
+        setGlobalChatCooldown(seconds)
+        if (seconds <= 0) clearInterval(interval)
+      }, 1000)
     }
     
     socketRef.current.emit("send_message", messageData)
@@ -1596,10 +1604,31 @@ export default function ActogramChat() {
                       {selectedChat.isEncrypted && <Lock className="h-4 w-4 text-green-500" />}
                     </div>
                     <p className="text-sm text-gray-500">
-                      {selectedChat.isGroup
-                        ? typingUsers.length > 0
-                          ? `${typingUsers.join(", ")} ${t.typing}`
-                          : t.online
+                      {selectedChat.type === "private"
+                        ? (() => {
+                            const otherUser = selectedChat.participants.find(
+                              (u) => u.id !== currentUser?.id && u.username !== currentUser?.username
+                            )
+                            if (!otherUser) return t.offline
+                            let statusText = t.offline
+                            let statusColor = "bg-gray-400"
+                            if (otherUser.status === "online") {
+                              statusText = t.online
+                              statusColor = "bg-green-500"
+                            } else if (otherUser.status === "away") {
+                              statusText = "Отошел"
+                              statusColor = "bg-blue-400"
+                            } else if (otherUser.status === "busy") {
+                              statusText = "Не беспокоить"
+                              statusColor = "bg-yellow-400"
+                            }
+                            return (
+                              <span className="flex items-center gap-1">
+                                <span className={`w-2 h-2 rounded-full ${statusColor}`}></span>
+                                {statusText}
+                              </span>
+                            )
+                          })()
                         : typingUsers.length > 0
                           ? `${typingUsers.join(", ")} ${t.typing}`
                           : t.online}
@@ -1681,7 +1710,16 @@ export default function ActogramChat() {
                           </div>
                         )}
 
-                        {message.senderId !== currentUser?.id && (
+                        {/* Для общего чата выводим имя отправителя */}
+                        {selectedChat?.id === "global" && message.senderId !== currentUser?.id && (
+                          <p className="text-xs font-bold mb-1 opacity-90">{message.senderName}:</p>
+                        )}
+                        {selectedChat?.id === "global" && message.senderId === currentUser?.id && (
+                          <p className="text-xs font-bold mb-1 opacity-90 text-right">{message.senderName}:</p>
+                        )}
+
+                        {/* Для остальных чатов, если не вы, показываем имя */}
+                        {selectedChat?.id !== "global" && message.senderId !== currentUser?.id && (
                           <p className="text-xs font-medium mb-1 opacity-70">{message.senderName}</p>
                         )}
 
@@ -1826,10 +1864,14 @@ export default function ActogramChat() {
                   </div>
                   <Button
                     onClick={sendMessage}
-                    disabled={!newMessage.trim() || !isConnected}
+                    disabled={!newMessage.trim() || !isConnected || (selectedChat?.id === "global" && globalChatCooldown > 0)}
                     className={`${buttonStyle} bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700`}
                   >
-                    <Send className="h-4 w-4" />
+                    {selectedChat?.id === "global" && globalChatCooldown > 0 ? (
+                      <span>{globalChatCooldown} сек</span>
+                    ) : (
+                      <Send className="h-4 w-4" />
+                    )}
                   </Button>
                 </div>
                 <div className="flex items-center justify-between mt-2 text-xs text-gray-500">
