@@ -688,19 +688,34 @@ app.get("/api/chats", authenticateToken, async (req, res) => {
         }
       })
     )
+    
+    // Всегда добавляем глобальный чат в начало списка
     const globalChat = await Chat.findById("global").lean();
     if (globalChat) {
-      if (!chatList.find(chat => chat.id === "global")) {
-        chatList.unshift({
-          ...globalChat,
-          id: globalChat._id?.toString() || globalChat._id,
-          participants: globalChat.participants || [],
-          lastMessage: null,
-          messageCount: 0,
-          unreadCount: 0,
-        });
-      }
+      // Получаем последнее сообщение и количество сообщений для глобального чата
+      const globalLastMessage = await Message.findOne({ chat: "global" })
+        .sort({ timestamp: -1 })
+        .lean()
+      const globalMessageCount = await Message.countDocuments({ chat: "global" })
+      
+      // Добавляем глобальный чат в начало списка
+      chatList.unshift({
+        ...globalChat,
+        id: globalChat._id?.toString() || globalChat._id,
+        participants: globalChat.participants || [],
+        lastMessage: globalLastMessage
+          ? {
+              ...globalLastMessage,
+              id: globalLastMessage._id?.toString() || globalLastMessage._id,
+              senderId: globalLastMessage.sender?.toString() || globalLastMessage.sender,
+              chatId: globalLastMessage.chat?.toString() || globalLastMessage.chat,
+            }
+          : null,
+        messageCount: globalMessageCount,
+        unreadCount: 0,
+      });
     }
+    
     res.json(chatList)
   } catch (error) {
     console.error("/api/chats error:", error)
@@ -715,9 +730,14 @@ app.get("/api/messages/:chatId", authenticateToken, async (req, res) => {
     const userId = req.user.userId
     const chat = await Chat.findById(chatId).lean()
     if (!chat) return res.status(404).json({ error: "Чат не найден" })
-    if (!chat.participants.filter(p => p !== null).map((id) => id.toString()).includes(userId)) {
+    
+    // Для глобального чата разрешаем всем пользователям получать сообщения
+    const isGlobalChat = chatId === "global"
+    const isParticipant = isGlobalChat || chat.participants.filter(p => p !== null).map((id) => id.toString()).includes(userId)
+    if (!isParticipant) {
       return res.status(403).json({ error: "Нет доступа к этому чату" })
     }
+    
     const chatMessages = await Message.find({ chat: chatId })
       .sort({ timestamp: 1 })
       .lean()
@@ -823,6 +843,34 @@ io.on("connection", async (socket) => {
             }
           })
         )
+        
+        // Всегда добавляем глобальный чат в начало списка
+        const globalChat = await Chat.findById("global").lean();
+        if (globalChat) {
+          // Получаем последнее сообщение и количество сообщений для глобального чата
+          const globalLastMessage = await Message.findOne({ chat: "global" })
+            .sort({ timestamp: -1 })
+            .lean()
+          const globalMessageCount = await Message.countDocuments({ chat: "global" })
+          
+          // Добавляем глобальный чат в начало списка
+          chatList.unshift({
+            ...globalChat,
+            id: globalChat._id?.toString() || globalChat._id,
+            participants: globalChat.participants || [],
+            lastMessage: globalLastMessage
+              ? {
+                  ...globalLastMessage,
+                  id: globalLastMessage._id?.toString() || globalLastMessage._id,
+                  senderId: globalLastMessage.sender?.toString() || globalLastMessage.sender,
+                  chatId: globalLastMessage.chat?.toString() || globalLastMessage.chat,
+                }
+              : null,
+            messageCount: globalMessageCount,
+            unreadCount: 0,
+          });
+        }
+        
         socket.emit("my_chats", chatList)
       }
     } catch (error) {
@@ -840,7 +888,10 @@ io.on("connection", async (socket) => {
       const chat = await Chat.findById(chatId)
       if (!chat) return
 
-      if (!chat.participants.filter(p => p !== null).map((id) => id.toString()).includes(user.id)) return
+      // Для глобального чата разрешаем всем пользователям получать сообщения
+      const isGlobalChat = chatId === "global"
+      const isParticipant = isGlobalChat || chat.participants.filter(p => p !== null).map((id) => id.toString()).includes(user.id)
+      if (!isParticipant) return
 
       const chatMessages = await Message.find({ chat: chatId })
         .sort({ timestamp: 1 })
@@ -995,7 +1046,9 @@ io.on("connection", async (socket) => {
       console.log(`👤 Текущий пользователь: ${user.id}`)
       
       // Проверяем, является ли пользователь участником чата
-      const isParticipant = chat.participants.some(p => p && p.toString() === user.id)
+      // Для глобального чата разрешаем всем пользователям присоединяться
+      const isGlobalChat = chatId === "global"
+      const isParticipant = isGlobalChat || chat.participants.some(p => p && p.toString() === user.id)
       if (!isParticipant) {
         console.log(`❌ Пользователь ${user.username} не является участником чата ${chatId}`)
         return
@@ -1058,10 +1111,27 @@ io.on("connection", async (socket) => {
       console.log(`👤 Текущий пользователь: ${user.id}`)
       
       // Проверяем, является ли пользователь участником чата
-      const isParticipant = chat.participants.some(p => p && p.toString() === user.id)
+      // Для глобального чата разрешаем всем пользователям отправлять сообщения
+      const isGlobalChat = messageData.chatId === "global"
+      const isParticipant = isGlobalChat || chat.participants.some(p => p && p.toString() === user.id)
       if (!isParticipant) {
         console.log(`❌ Пользователь ${user.username} не является участником чата ${messageData.chatId}`)
         return
+      }
+      
+      // Rate limiting для глобального чата
+      if (isGlobalChat) {
+        const now = Date.now()
+        const userRateLimit = globalChatRateLimit.get(user.id) || []
+        const recentMessages = userRateLimit.filter(timestamp => now - timestamp < 60000) // 1 минута
+        
+        if (recentMessages.length >= 5) {
+          socket.emit("error", { message: "Слишком много сообщений в общий чат. Подождите немного." })
+          return
+        }
+        
+        userRateLimit.push(now)
+        globalChatRateLimit.set(user.id, userRateLimit)
       }
       
       // Валидация сообщения
