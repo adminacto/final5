@@ -135,6 +135,7 @@ const blockedUsers = new Map() // userId -> Set of blocked userIds
 const userHeartbeats = new Map() // userId -> lastHeartbeat timestamp
 // Rate limiting для общего чата
 const globalChatRateLimit = new Map(); // userId -> lastTimestamp
+const globalChatOnline = new Set(); // socket.id
 
 // Middleware для проверки JWT
 const authenticateToken = (req, res, next) => {
@@ -811,6 +812,8 @@ io.on("connection", async (socket) => {
     
     // Всегда присоединяем к глобальному чату
     socket.join("global")
+    globalChatOnline.add(socket.id);
+    io.to('global').emit('global_online_count', globalChatOnline.size);
     console.log(`🌍 ${user.username} присоединен к глобальному чату`)
   } catch (error) {
     console.error("Error joining user chats:", error)
@@ -1060,6 +1063,10 @@ io.on("connection", async (socket) => {
 
       socket.join(chatId)
       console.log(`✅ ${user.username} присоединился к чату: ${chatId}`)
+      if (chatId === "global") {
+        globalChatOnline.add(socket.id);
+        io.to('global').emit('global_online_count', globalChatOnline.size);
+      }
     } catch (error) {
       console.error("join_chat error:", error)
     }
@@ -1409,6 +1416,8 @@ io.on("connection", async (socket) => {
     await User.findByIdAndUpdate(user.id, { isOnline: false, lastSeen: new Date(), status: "offline" })
     // Удаляем из heartbeat tracking
     userHeartbeats.delete(user.id)
+    globalChatOnline.delete(socket.id);
+    io.to('global').emit('global_online_count', globalChatOnline.size);
     // Обновляем список активных пользователей
     const activeUsers = await User.find({ isOnline: true }).lean()
     io.emit("users_update", activeUsers.map((u) => ({
@@ -1464,6 +1473,21 @@ const cleanupInactiveUsers = async () => {
 
 // Запускаем очистку каждые 30 секунд
 setInterval(cleanupInactiveUsers, 30000)
+
+// Автоочистка общего чата каждый день в 4:00 утра
+let lastGlobalChatCleanupDay = null;
+setInterval(async () => {
+  const now = new Date();
+  if (now.getHours() === 4 && now.getMinutes() === 0) {
+    const today = now.toISOString().slice(0, 10);
+    if (lastGlobalChatCleanupDay !== today) {
+      await Message.deleteMany({ chat: 'global' });
+      io.to('global').emit('chat_cleared', { chatId: 'global' });
+      lastGlobalChatCleanupDay = today;
+      console.log('🌍 Общий чат автоматически очищен в 4:00 утра');
+    }
+  }
+}, 60 * 1000);
 
 // Запуск сервера
 server.listen(PORT, () => {
