@@ -379,6 +379,8 @@ export default function ActogramChat() {
   const [showChatInfoDialog, setShowChatInfoDialog] = useState(false)
   const [selectedChatForInfo, setSelectedChatForInfo] = useState<Chat | null>(null)
   const [globalChatCooldown, setGlobalChatCooldown] = useState(0)
+  const [pendingGlobalMessage, setPendingGlobalMessage] = useState(false)
+  const [globalOnlineCount, setGlobalOnlineCount] = useState(1)
 
   // Refs
   const socketRef = useRef<Socket | null>(null)
@@ -471,24 +473,25 @@ export default function ActogramChat() {
       
       // Проверяем, не является ли это дубликатом оптимистичного сообщения
       setMessages((prev) => {
-        const isDuplicate = prev.some(m => 
-          m.id === message.id || 
-          (m.senderId === message.senderId && 
-           m.content === message.content && 
-           Math.abs(new Date(m.timestamp).getTime() - new Date(message.timestamp).getTime()) < 5000)
-        )
-        
-        if (isDuplicate) {
-          console.log("🔄 Пропускаем дубликат сообщения")
-          return prev
-        }
-        
+        if (prev.some((m) => m.id === message.id)) return prev;
         return [...prev, message]
       })
       
       updateChatLastMessage(message)
       if (notifications && message.senderId !== currentUser.id) {
         showNotification(message.senderName, message.content)
+      }
+      
+      // Для общего чата: если это наше сообщение, запускаем счетчик и снимаем pending
+      if (selectedChat?.id === "global" && message.senderId === currentUser?.id) {
+        setGlobalChatCooldown(5);
+        setPendingGlobalMessage(false);
+        let seconds = 5;
+        const interval = setInterval(() => {
+          seconds--;
+          setGlobalChatCooldown(seconds);
+          if (seconds <= 0) clearInterval(interval);
+        }, 1000);
       }
     })
 
@@ -574,8 +577,11 @@ export default function ActogramChat() {
       })
     })
 
+    socket.on("global_online_count", setGlobalOnlineCount)
+
           return () => {
         socket.disconnect()
+        socket.off("global_online_count", setGlobalOnlineCount)
       }
   }, [isAuthenticated, currentUser, selectedChat?.id, notifications])
 
@@ -756,6 +762,13 @@ export default function ActogramChat() {
   }
 
   const sendMessage = () => {
+    if (!newMessage.trim() || !selectedChat || !currentUser || !socketRef.current) return;
+
+    if (selectedChat.id === "global") {
+      if (globalChatCooldown > 0 || pendingGlobalMessage) return;
+      setPendingGlobalMessage(true);
+    }
+
     console.log("🔍 Отладка sendMessage:", {
       currentUser: currentUser,
       currentUserId: currentUser?.id,
@@ -797,7 +810,7 @@ export default function ActogramChat() {
 
     console.log("📤 Данные сообщения для отправки:", messageData)
     
-    // Для глобального чата добавляем оптимистичное обновление
+    // Для общего чата добавляем оптимистичное обновление
     if (selectedChat.id === "global") {
       const optimisticMessage = {
         id: Date.now().toString(),
@@ -1285,6 +1298,9 @@ export default function ActogramChat() {
                       <span className="flex items-center gap-1">
                         <Wifi className="h-3 w-3" />
                         {t.connected}
+                        {selectedChat?.id === "global" && (
+                          <span> {globalOnlineCount}</span>
+                        )}
                       </span>
                     ) : (
                       <span className="flex items-center gap-1">
@@ -1852,9 +1868,17 @@ export default function ActogramChat() {
                           startTyping()
                         }
                       }}
-                      onKeyPress={(e) => e.key === "Enter" && sendMessage()}
+                      onKeyPress={(e) => {
+                        if (
+                          selectedChat?.id === "global" && (globalChatCooldown > 0 || pendingGlobalMessage)
+                        ) {
+                          e.preventDefault();
+                          return;
+                        }
+                        if (e.key === "Enter") sendMessage();
+                      }}
                       className={`${inputStyle} pr-20`}
-                      disabled={!isConnected}
+                      disabled={!isConnected || (selectedChat?.id === "global" && (globalChatCooldown > 0 || pendingGlobalMessage))}
                     />
                     <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-1">
                       <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
@@ -1864,11 +1888,11 @@ export default function ActogramChat() {
                   </div>
                   <Button
                     onClick={sendMessage}
-                    disabled={!newMessage.trim() || !isConnected || (selectedChat?.id === "global" && globalChatCooldown > 0)}
+                    disabled={!newMessage.trim() || !isConnected || (selectedChat?.id === "global" && (globalChatCooldown > 0 || pendingGlobalMessage))}
                     className={`${buttonStyle} bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700`}
                   >
-                    {selectedChat?.id === "global" && globalChatCooldown > 0 ? (
-                      <span>{globalChatCooldown} сек</span>
+                    {selectedChat?.id === "global" && (globalChatCooldown > 0 || pendingGlobalMessage) ? (
+                      <span>{pendingGlobalMessage ? "..." : `${globalChatCooldown} сек`}</span>
                     ) : (
                       <Send className="h-4 w-4" />
                     )}
