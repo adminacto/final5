@@ -225,7 +225,6 @@ async function ensureGlobalChat() {
     console.log("🌍 Глобальный чат создан!");
   }
 }
-ensureGlobalChat();
 
 // Главная страница
 app.get("/", (req, res) => {
@@ -1367,35 +1366,31 @@ const maxConnectionAttempts = 5
 
 const connectToMongoDB = async () => {
   try {
-    connectionAttempts++
-    console.log(`🔄 Попытка подключения к MongoDB (${connectionAttempts}/${maxConnectionAttempts})`)
-    
+    connectionAttempts++;
+    console.log(`🔄 Попытка подключения к MongoDB (${connectionAttempts}/${maxConnectionAttempts})`);
     await mongoose.connect("mongodb+srv://actogol:actogolsila@actogramuz.6ogftpx.mongodb.net/actogram?retryWrites=true&w=majority&appName=actogramUZ", {
       serverSelectionTimeoutMS: 10000,
       socketTimeoutMS: 45000,
-    })
-    
-    console.log("✅ MongoDB подключен успешно")
-    connectionAttempts = 0 // Сброс счетчика при успешном подключении
+    });
+    console.log("✅ MongoDB подключен успешно");
+    connectionAttempts = 0; // Сброс счетчика при успешном подключении
+    await ensureGlobalChat(); // <-- Вызов здесь!
   } catch (err) {
-    console.error(`❌ Ошибка подключения к MongoDB (попытка ${connectionAttempts}):`, err.message)
-    
+    console.error(`❌ Ошибка подключения к MongoDB (попытка ${connectionAttempts}):`, err.message);
     if (connectionAttempts >= maxConnectionAttempts) {
-      console.error("🚫 Превышено максимальное количество попыток подключения")
-      console.log("💡 Проверьте настройки MongoDB Atlas:")
-      console.log("   1. IP адреса в Network Access")
-      console.log("   2. Правильность строки подключения")
-      console.log("   3. Статус кластера")
-      return
+      console.error("🚫 Превышено максимальное количество попыток подключения");
+      console.log("💡 Проверьте настройки MongoDB Atlas:");
+      console.log("   1. IP адреса в Network Access");
+      console.log("   2. Правильность строки подключения");
+      console.log("   3. Статус кластера");
+      return;
     }
-    
-    console.log(`⏳ Повторная попытка через 5 секунд...`)
-    setTimeout(connectToMongoDB, 5000)
+    console.log(`⏳ Повторная попытка через 5 секунд...`);
+    setTimeout(connectToMongoDB, 5000);
   }
-}
+};
 
-// Запуск подключения к MongoDB
-connectToMongoDB()
+connectToMongoDB();
 
 // Обработка ошибок подключения
 mongoose.connection.on('error', (err) => {
