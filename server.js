@@ -614,8 +614,15 @@ app.post("/api/auth", authLimiter, async (req, res) => {
       const token = jwt.sign({ userId: user._id, email: user.email, username: user.username }, JWT_SECRET, { expiresIn: "30d" })
       const userResponse = user.toObject()
       delete userResponse.password
-      // Добавляем поле id для совместимости с клиентом
       userResponse.id = user._id.toString()
+      // --- Устанавливаем cookie с токеном ---
+      res.cookie('token', token, {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'Strict',
+        maxAge: 30 * 24 * 60 * 60 * 1000
+      })
+      // ---
       res.json({
         success: true,
         message: "Регистрация успешна",
@@ -639,8 +646,15 @@ app.post("/api/auth", authLimiter, async (req, res) => {
       const token = jwt.sign({ userId: user._id, email: user.email, username: user.username }, JWT_SECRET, { expiresIn: "30d" })
       const userResponse = user.toObject()
       delete userResponse.password
-      // Добавляем поле id для совместимости с клиентом
       userResponse.id = user._id.toString()
+      // --- Устанавливаем cookie с токеном ---
+      res.cookie('token', token, {
+        httpOnly: true,
+        secure: true,
+        sameSite: 'Strict',
+        maxAge: 30 * 24 * 60 * 60 * 1000
+      })
+      // ---
       res.json({
         success: true,
         message: "Вход выполнен успешно",
@@ -724,11 +738,14 @@ app.get("/api/chats", authenticateToken, async (req, res) => {
   }
 })
 
-// Получение сообщений чата (MongoDB)
+// Получение сообщений чата (MongoDB) с пагинацией
 app.get("/api/messages/:chatId", authenticateToken, async (req, res) => {
   try {
     const { chatId } = req.params
     const userId = req.user.userId
+    const page = parseInt(req.query.page) || 0
+    const limit = parseInt(req.query.limit) || 50
+    const skip = page * limit
     const chat = await Chat.findById(chatId).lean()
     if (!chat) return res.status(404).json({ error: "Чат не найден" })
     
@@ -740,7 +757,9 @@ app.get("/api/messages/:chatId", authenticateToken, async (req, res) => {
     }
     
     const chatMessages = await Message.find({ chat: chatId })
-      .sort({ timestamp: 1 })
+      .sort({ timestamp: -1 })
+      .skip(skip)
+      .limit(limit)
       .lean()
 
     // Для каждого сообщения с replyTo подгружаем оригинал
@@ -914,9 +933,10 @@ io.on("connection", async (socket) => {
   // Получение сообщений (MongoDB)
   socket.on("get_messages", async (data) => {
     try {
-      const { chatId, userId } = data
+      const { chatId, userId, page = 0, limit = 50 } = data
       if (userId !== user.id) return
 
+      const skip = page * limit
       const chat = await Chat.findById(chatId)
       if (!chat) return
 
@@ -926,7 +946,9 @@ io.on("connection", async (socket) => {
       if (!isParticipant) return
 
       const chatMessages = await Message.find({ chat: chatId })
-        .sort({ timestamp: 1 })
+        .sort({ timestamp: -1 })
+        .skip(skip)
+        .limit(limit)
         .lean()
 
       const decryptedMessages = chatMessages.map((msg) => ({
@@ -1343,7 +1365,7 @@ io.on("connection", async (socket) => {
       
       // Проверяем права для глобального чата
       const isGlobalChat = chatId === "global"
-      const isAdmin = user.username === "@adminstator"
+      const isAdmin = user.isAdmin
       const isParticipant = chat.participants.filter(p => p !== null).map((id) => id.toString()).includes(user.id)
       const isCreator = chat.createdBy?.toString() === user.id
       
@@ -1626,6 +1648,7 @@ const UserSchema = new Schema({
   lastSeen: Date,
   avatar: String,
   status: String,
+  isAdmin: { type: Boolean, default: false }, // <-- новое поле
 });
 
 const ChatSchema = new Schema({
@@ -1646,7 +1669,7 @@ const ChatSchema = new Schema({
 
 const MessageSchema = new Schema({
   sender: { type: Schema.Types.ObjectId, ref: "User" },
-  chat: { type: String, ref: "Chat" },
+  chat: { type: Schema.Types.ObjectId, ref: "Chat" },
   content: String,
   timestamp: { type: Date, default: Date.now },
   type: String,
@@ -1716,7 +1739,7 @@ app.post("/api/bot-news", authenticateToken, async (req, res) => {
 app.post("/api/ban-user", authenticateToken, async (req, res) => {
   try {
     const { username } = req.user
-    if (username !== "@adminstator") {
+    if (!req.user.isAdmin) {
       return res.status(403).json({ error: "Только админ может банить" })
     }
     const { userId } = req.body
