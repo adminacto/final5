@@ -146,6 +146,8 @@ const authenticateToken = (req, res, next) => {
   console.log("🔍 Проверяем аутентификацию для запроса:", req.path);
   console.log("🔍 Заголовки:", Object.keys(req.headers));
   console.log("🔍 Cookie:", req.cookies);
+  console.log("🔍 Origin:", req.headers.origin);
+  console.log("🔍 Host:", req.headers.host);
   
   if (authHeader && authHeader.startsWith("Bearer ")) {
     token = authHeader.split(" ")[1];
@@ -155,6 +157,7 @@ const authenticateToken = (req, res, next) => {
     console.log("🍪 Токен получен из cookie");
   } else {
     console.log("❌ Токен не найден ни в заголовке, ни в cookie");
+    console.log("🔍 Все cookie:", JSON.stringify(req.cookies, null, 2));
   }
 
   if (!token) {
@@ -635,10 +638,11 @@ app.post("/api/auth", authLimiter, async (req, res) => {
       userResponse.id = user._id.toString()
       // --- Устанавливаем cookie с токеном ---
       res.cookie('token', token, {
-        httpOnly: true,
-        secure: false, // Изменено с true на false для локальной разработки
-        sameSite: 'Lax', // Изменено с 'Strict' на 'Lax'
-        maxAge: 30 * 24 * 60 * 60 * 1000
+        httpOnly: false, // Изменено на false для отладки
+        secure: false,
+        sameSite: 'Lax',
+        maxAge: 30 * 24 * 60 * 60 * 1000,
+        path: '/'
       })
       console.log("🍪 Cookie установлен для пользователя:", user.username)
       // ---
@@ -668,10 +672,11 @@ app.post("/api/auth", authLimiter, async (req, res) => {
       userResponse.id = user._id.toString()
       // --- Устанавливаем cookie с токеном ---
       res.cookie('token', token, {
-        httpOnly: true,
-        secure: false, // Изменено с true на false для локальной разработки
-        sameSite: 'Lax', // Изменено с 'Strict' на 'Lax'
-        maxAge: 30 * 24 * 60 * 60 * 1000
+        httpOnly: false, // Изменено на false для отладки
+        secure: false,
+        sameSite: 'Lax',
+        maxAge: 30 * 24 * 60 * 60 * 1000,
+        path: '/'
       })
       console.log("🍪 Cookie установлен для пользователя:", user.username)
       // ---
@@ -1796,14 +1801,23 @@ app.post("/api/ban-user", authenticateToken, async (req, res) => {
 // Endpoint для загрузки изображения в чат
 app.post("/api/upload-image", authenticateToken, upload.single("image"), async (req, res) => {
   try {
+    console.log("📷 Запрос на загрузку изображения")
+    console.log("📷 Файл:", req.file)
+    console.log("📷 Body:", req.body)
+    console.log("📷 User:", req.user)
+    
     if (!req.file) {
+      console.log("❌ Файл не загружен")
       return res.status(400).json({ error: "Файл не загружен" })
     }
     
     const userId = req.user.userId
     const { chatId } = req.body
     
+    console.log("📷 Данные:", { userId, chatId })
+    
     if (!chatId) {
+      console.log("❌ chatId отсутствует")
       return res.status(400).json({ error: "chatId обязателен" })
     }
     
