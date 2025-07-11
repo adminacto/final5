@@ -12,6 +12,7 @@ const mongoose = require("mongoose")
 const { Schema, model } = require("mongoose")
 const fs = require("fs")
 const multer = require("multer")
+const cookieParser = require("cookie-parser")
 
 
 // Инициализация приложения
@@ -119,6 +120,7 @@ const corsOptions = {
 app.use(cors(corsOptions))
 app.use(express.json({ limit: "10mb" }))
 app.use(express.static(path.join(__dirname, "public")))
+app.use(cookieParser())
 
 // Socket.IO настройки
 const io = socketIo(server, {
@@ -139,20 +141,25 @@ const globalChatOnline = new Set(); // socket.id
 
 // Middleware для проверки JWT
 const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers["authorization"]
-  const token = authHeader && authHeader.split(" ")[1]
+  let token = null;
+  const authHeader = req.headers["authorization"];
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    token = authHeader.split(" ")[1];
+  } else if (req.cookies && req.cookies.token) {
+    token = req.cookies.token;
+  }
 
   if (!token) {
-    return res.status(401).json({ error: "Токен доступа обязателен" })
+    return res.status(401).json({ error: "Токен доступа обязателен" });
   }
 
   jwt.verify(token, JWT_SECRET, (err, user) => {
     if (err) {
-      return res.status(403).json({ error: "Недействительный или истекший токен" })
+      return res.status(403).json({ error: "Недействительный или истекший токен" });
     }
-    req.user = user
-    next()
-  })
+    req.user = user;
+    next();
+  });
 }
 
 // Валидация
