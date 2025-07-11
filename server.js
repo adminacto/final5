@@ -752,7 +752,11 @@ app.get("/api/messages/:chatId", authenticateToken, async (req, res) => {
           let senderName = "Неизвестно"
           if (originalMsg.sender) {
             const senderUser = await User.findById(originalMsg.sender).lean()
-            senderName = senderUser?.username || senderUser?.fullName || "Неизвестно"
+            if (senderUser) {
+              senderName = senderUser.username || senderUser.fullName || "Неизвестно"
+            } else if (typeof originalMsg.sender === "string") {
+              senderName = originalMsg.sender // если вдруг sender — это строка (username)
+            }
           }
           replyTo = {
             id: originalMsg._id?.toString() || originalMsg._id,
