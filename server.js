@@ -145,18 +145,25 @@ const authenticateToken = (req, res, next) => {
   const authHeader = req.headers["authorization"];
   if (authHeader && authHeader.startsWith("Bearer ")) {
     token = authHeader.split(" ")[1];
+    console.log("🔑 Токен получен из заголовка Authorization");
   } else if (req.cookies && req.cookies.token) {
     token = req.cookies.token;
+    console.log("🍪 Токен получен из cookie");
+  } else {
+    console.log("❌ Токен не найден ни в заголовке, ни в cookie");
   }
 
   if (!token) {
+    console.log("❌ Токен отсутствует, возвращаем 401");
     return res.status(401).json({ error: "Токен доступа обязателен" });
   }
 
   jwt.verify(token, JWT_SECRET, (err, user) => {
     if (err) {
+      console.log("❌ Ошибка верификации токена:", err.message);
       return res.status(403).json({ error: "Недействительный или истекший токен" });
     }
+    console.log("✅ Пользователь аутентифицирован:", user.userId, user.username);
     req.user = user;
     next();
   });
@@ -682,10 +689,15 @@ app.post("/api/auth", authLimiter, async (req, res) => {
 app.get("/api/chats", authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId
+    console.log("📋 Запрос чатов для пользователя:", userId, req.user.username)
+    
     // Найти все чаты, где пользователь — участник
     const chats = await Chat.find({ participants: userId })
       .populate("participants", "_id username fullName avatar isOnline isVerified status")
       .lean()
+    
+    console.log("📋 Найдено чатов:", chats.length)
+    
     // Для каждого чата получить последнее сообщение и количество сообщений
     const chatList = await Promise.all(
       chats.map(async (chat) => {
@@ -736,8 +748,10 @@ app.get("/api/chats", authenticateToken, async (req, res) => {
         messageCount: globalMessageCount,
         unreadCount: 0,
       });
+      console.log("🌍 Глобальный чат добавлен в список");
     }
     
+    console.log("📋 Отправляем список чатов:", chatList.length, "чатов");
     res.json(chatList)
   } catch (error) {
     console.error("/api/chats error:", error)
@@ -811,19 +825,23 @@ app.get("/api/messages/:chatId", authenticateToken, async (req, res) => {
 io.use(async (socket, next) => {
   try {
     const token = socket.handshake.auth.token
+    console.log("🔌 Socket.IO подключение, токен:", token ? "есть" : "нет")
 
     if (!token) {
+      console.log("❌ Socket.IO: токен отсутствует")
       return next(new Error("Токен аутентификации обязателен"))
     }
 
     jwt.verify(token, JWT_SECRET, async (err, decoded) => {
       if (err) {
+        console.log("❌ Socket.IO: ошибка верификации токена:", err.message)
         return next(new Error("Недействительный или истекший токен"))
       }
 
       try {
         const user = await User.findById(decoded.userId).lean()
         if (!user) {
+          console.log("❌ Socket.IO: пользователь не найден в БД")
           return next(new Error("Пользователь не найден"))
         }
 
@@ -832,6 +850,7 @@ io.use(async (socket, next) => {
           ...user,
           id: user._id.toString() // Добавляем поле id для совместимости
         }
+        console.log("✅ Socket.IO: пользователь аутентифицирован:", user.username, user._id)
         next()
       } catch (error) {
         console.error("Socket auth error:", error)
@@ -927,6 +946,7 @@ io.on("connection", async (socket) => {
             messageCount: globalMessageCount,
             unreadCount: 0,
           });
+          console.log("🌍 Глобальный чат добавлен в список");
         }
         
         socket.emit("my_chats", chatList)
