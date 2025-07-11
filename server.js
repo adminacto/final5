@@ -742,14 +742,35 @@ app.get("/api/messages/:chatId", authenticateToken, async (req, res) => {
     const chatMessages = await Message.find({ chat: chatId })
       .sort({ timestamp: 1 })
       .lean()
-    const decryptedMessages = chatMessages.map((msg) => ({
-      ...msg,
-      id: msg._id?.toString() || msg._id,
-      senderId: msg.sender?.toString() || msg.sender,
-      chatId: msg.chat?.toString() || msg.chat,
-      content: msg.isEncrypted ? decryptMessage(msg.content) : msg.content,
+
+    // Для каждого сообщения с replyTo подгружаем оригинал
+    const messagesWithReply = await Promise.all(chatMessages.map(async (msg) => {
+      let replyTo = null
+      if (msg.replyTo) {
+        const originalMsg = await Message.findById(msg.replyTo).lean()
+        if (originalMsg) {
+          let senderName = "Неизвестно"
+          if (originalMsg.sender) {
+            const senderUser = await User.findById(originalMsg.sender).lean()
+            senderName = senderUser?.username || senderUser?.fullName || "Неизвестно"
+          }
+          replyTo = {
+            id: originalMsg._id?.toString() || originalMsg._id,
+            content: originalMsg.isEncrypted ? decryptMessage(originalMsg.content) : originalMsg.content,
+            senderName,
+          }
+        }
+      }
+      return {
+        ...msg,
+        id: msg._id?.toString() || msg._id,
+        senderId: msg.sender?.toString() || msg.sender,
+        chatId: msg.chat?.toString() || msg.chat,
+        content: msg.isEncrypted ? decryptMessage(msg.content) : msg.content,
+        replyTo, // теперь это объект, а не id
+      }
     }))
-    res.json(decryptedMessages)
+    res.json(messagesWithReply)
   } catch (error) {
     console.error("/api/messages/:chatId error:", error)
     res.status(500).json({ error: "Ошибка сервера" })
