@@ -1178,6 +1178,23 @@ io.on("connection", async (socket) => {
       
       console.log(`✅ Сообщение создано в БД: ${message._id}`)
       
+      // Формируем replyTo для UI, если это ответ
+      let replyToData = null;
+      if (message.replyTo) {
+        const originalMsg = await Message.findById(message.replyTo).lean();
+        if (originalMsg) {
+          let senderName = "Неизвестно";
+          if (originalMsg.sender) {
+            const senderUser = await User.findById(originalMsg.sender).lean();
+            senderName = senderUser?.username || senderUser?.fullName || "Неизвестно";
+          }
+          replyToData = {
+            id: originalMsg._id?.toString() || originalMsg._id,
+            content: originalMsg.isEncrypted ? decryptMessage(originalMsg.content) : originalMsg.content,
+            senderName,
+          };
+        }
+      }
       const msgObj = {
         ...message.toObject(),
         id: message._id?.toString() || message._id,
@@ -1185,6 +1202,7 @@ io.on("connection", async (socket) => {
         senderName: user.username,
         chatId: chat._id?.toString() || chat._id,
         content: message.isEncrypted ? decryptMessage(message.content) : message.content,
+        replyTo: replyToData,
       }
       
       console.log(`📤 Отправка сообщения в комнату: ${chat._id}`)
