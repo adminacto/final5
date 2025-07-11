@@ -579,6 +579,14 @@ export default function ActogramChat() {
 
     socket.on("global_online_count", setGlobalOnlineCount)
 
+    socket.on("message_reaction", (data: { messageId: string; reactions: any[] }) => {
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === data.messageId ? { ...msg, reactions: data.reactions } : msg
+        )
+      )
+    })
+
           return () => {
         socket.disconnect()
         socket.off("global_online_count", setGlobalOnlineCount)
@@ -808,42 +816,6 @@ export default function ActogramChat() {
         : undefined,
     }
 
-    console.log("📤 Данные сообщения для отправки:", messageData)
-    
-    // Для общего чата добавляем оптимистичное обновление
-    if (selectedChat.id === "global") {
-      const optimisticMessage = {
-        id: Date.now().toString(),
-        senderId: currentUser.id,
-        senderName: currentUser.username,
-        content: newMessage.trim(),
-        chatId: selectedChat.id,
-        timestamp: new Date(),
-        type: "text",
-        isEncrypted: false, // Не шифруем для отображения
-        replyTo: replyingTo
-          ? {
-              id: replyingTo.id,
-              content: replyingTo.content,
-              senderName: replyingTo.senderName,
-            }
-          : undefined,
-      }
-      
-      // Добавляем сообщение сразу в UI
-      setMessages((prev) => [...prev, optimisticMessage])
-      
-      // Обновляем последнее сообщение в списке чатов
-      updateChatLastMessage(optimisticMessage)
-      setGlobalChatCooldown(5)
-      let seconds = 5
-      const interval = setInterval(() => {
-        seconds--
-        setGlobalChatCooldown(seconds)
-        if (seconds <= 0) clearInterval(interval)
-      }, 1000)
-    }
-    
     socketRef.current.emit("send_message", messageData)
     setNewMessage("")
     setReplyingTo(null)
