@@ -641,10 +641,9 @@ app.post("/api/auth", authLimiter, async (req, res) => {
       res.cookie('token', token, {
         httpOnly: false, // Изменено на false для отладки
         secure: false,
-        sameSite: 'None', // Изменено для работы с разными доменами
+        sameSite: 'Lax', // Вернули обратно
         maxAge: 30 * 24 * 60 * 60 * 1000,
-        path: '/',
-        domain: '.onrender.com' // Добавляем домен
+        path: '/'
       })
       console.log("🍪 Cookie установлен для пользователя:", user.username)
       // ---
@@ -676,10 +675,9 @@ app.post("/api/auth", authLimiter, async (req, res) => {
       res.cookie('token', token, {
         httpOnly: false, // Изменено на false для отладки
         secure: false,
-        sameSite: 'None', // Изменено для работы с разными доменами
+        sameSite: 'Lax', // Вернули обратно
         maxAge: 30 * 24 * 60 * 60 * 1000,
-        path: '/',
-        domain: '.onrender.com' // Добавляем домен
+        path: '/'
       })
       console.log("🍪 Cookie установлен для пользователя:", user.username)
       // ---
