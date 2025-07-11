@@ -1792,3 +1792,78 @@ app.post("/api/ban-user", authenticateToken, async (req, res) => {
     res.status(500).json({ error: "Ошибка бана пользователя" })
   }
 })
+
+// Endpoint для загрузки изображения в чат
+app.post("/api/upload-image", authenticateToken, upload.single("image"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "Файл не загружен" })
+    }
+    
+    const userId = req.user.userId
+    const { chatId } = req.body
+    
+    if (!chatId) {
+      return res.status(400).json({ error: "chatId обязателен" })
+    }
+    
+    // Проверяем, что пользователь является участником чата
+    const chat = await Chat.findById(chatId)
+    if (!chat) {
+      return res.status(404).json({ error: "Чат не найден" })
+    }
+    
+    const isGlobalChat = chatId === "global"
+    const isParticipant = isGlobalChat || chat.participants.some(p => p && p.toString() === userId)
+    if (!isParticipant) {
+      return res.status(403).json({ error: "Нет доступа к этому чату" })
+    }
+    
+    const imageUrl = `/avatars/${req.file.filename}`
+    
+    // Создаем сообщение с изображением
+    const message = await Message.create({
+      sender: userId,
+      chat: chatId,
+      content: `📷 Изображение`,
+      timestamp: new Date(),
+      type: "image",
+      fileUrl: imageUrl,
+      fileName: req.file.originalname,
+      fileSize: req.file.size,
+      isEncrypted: false,
+      reactions: [],
+      readBy: [userId],
+      isEdited: false,
+    })
+    
+    // Получаем информацию о пользователе
+    const user = await User.findById(userId).lean()
+    
+    const msgObj = {
+      ...message.toObject(),
+      id: message._id?.toString() || message._id,
+      senderId: userId,
+      senderName: user.username,
+      chatId: chatId,
+      content: `📷 Изображение`,
+      fileUrl: imageUrl,
+      fileName: req.file.originalname,
+      fileSize: req.file.size,
+    }
+    
+    // Отправляем сообщение всем участникам чата
+    io.to(chatId).emit("new_message", msgObj)
+    
+    res.json({ 
+      success: true, 
+      message: msgObj,
+      imageUrl: imageUrl 
+    })
+    
+    console.log(`📷 Изображение загружено: ${user.username} -> ${chatId}`)
+  } catch (error) {
+    console.error("upload-image error:", error)
+    res.status(500).json({ error: "Ошибка загрузки изображения" })
+  }
+})
