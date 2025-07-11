@@ -14,6 +14,25 @@ const fs = require("fs")
 const multer = require("multer")
 const cookieParser = require("cookie-parser")
 
+// Cloudinary integration
+const cloudinary = require('cloudinary').v2;
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
+
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+const storage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'actogram_uploads',
+    allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
+    transformation: [{ width: 800, height: 800, crop: 'limit' }],
+  },
+});
+const upload = multer({ storage });
 
 // Инициализация приложения
 const app = express()
@@ -56,29 +75,6 @@ const avatarsDir = path.join(__dirname, "public", "avatars")
 if (!fs.existsSync(avatarsDir)) {
   fs.mkdirSync(avatarsDir, { recursive: true })
 }
-
-// Multer storage config
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, avatarsDir)
-  },
-  filename: function (req, file, cb) {
-    const ext = path.extname(file.originalname)
-    const uniqueName = `${Date.now()}_${Math.round(Math.random() * 1e9)}${ext}`
-    cb(null, uniqueName)
-  },
-})
-const upload = multer({
-  storage,
-  limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
-  fileFilter: (req, file, cb) => {
-    if (["image/jpeg", "image/png", "image/webp"].includes(file.mimetype)) {
-      cb(null, true)
-    } else {
-      cb(new Error("Только изображения (jpg, png, webp)"))
-    }
-  },
-})
 
 // Конфигурация
 const JWT_SECRET = process.env.JWT_SECRET || "actogram_ultra_secure_key_2024_v3"
@@ -1802,7 +1798,7 @@ app.post("/api/ban-user", authenticateToken, async (req, res) => {
 // Endpoint для загрузки изображения в чат
 app.post("/api/upload-image", authenticateToken, upload.single("image"), async (req, res) => {
   try {
-    console.log("📷 Запрос на загрузку изображения")
+    console.log("📷 Запрос на загрузку изображения (Cloudinary)")
     console.log("📷 Файл:", req.file)
     console.log("📷 Body:", req.body)
     console.log("📷 User:", req.user)
@@ -1834,7 +1830,8 @@ app.post("/api/upload-image", authenticateToken, upload.single("image"), async (
       return res.status(403).json({ error: "Нет доступа к этому чату" })
     }
     
-    const imageUrl = `/avatars/${req.file.filename}`
+    // Cloudinary URL
+    const imageUrl = req.file.path;
     
     // Создаем сообщение с изображением
     const message = await Message.create({
@@ -1876,7 +1873,7 @@ app.post("/api/upload-image", authenticateToken, upload.single("image"), async (
       imageUrl: imageUrl 
     })
     
-    console.log(`📷 Изображение загружено: ${user.username} -> ${chatId}`)
+    console.log(`📷 Изображение загружено (Cloudinary): ${user.username} -> ${chatId}`)
   } catch (error) {
     console.error("upload-image error:", error)
     res.status(500).json({ error: "Ошибка загрузки изображения" })
