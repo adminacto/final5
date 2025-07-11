@@ -700,6 +700,7 @@ app.get("/api/chats", authenticateToken, async (req, res) => {
     // Найти все чаты, где пользователь — участник
     const chats = await Chat.find({ participants: userId })
       .populate("participants", "_id username fullName avatar isOnline isVerified status")
+      .sort({ updatedAt: -1 }) // Сортируем по времени обновления
       .lean()
     
     console.log("📋 Найдено чатов:", chats.length)
@@ -784,7 +785,7 @@ app.get("/api/messages/:chatId", authenticateToken, async (req, res) => {
     }
     
     const chatMessages = await Message.find({ chat: chatId })
-      .sort({ timestamp: -1 })
+      .sort({ timestamp: 1 }) // Изменено с -1 на 1 - старые сообщения сверху
       .skip(skip)
       .limit(limit)
       .lean()
@@ -979,7 +980,7 @@ io.on("connection", async (socket) => {
       if (!isParticipant) return
 
       const chatMessages = await Message.find({ chat: chatId })
-        .sort({ timestamp: -1 })
+        .sort({ timestamp: 1 }) // Изменено с -1 на 1 - старые сообщения сверху
         .skip(skip)
         .limit(limit)
         .lean()
