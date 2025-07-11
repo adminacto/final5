@@ -143,6 +143,10 @@ const globalChatOnline = new Set(); // socket.id
 const authenticateToken = (req, res, next) => {
   let token = null;
   const authHeader = req.headers["authorization"];
+  console.log("🔍 Проверяем аутентификацию для запроса:", req.path);
+  console.log("🔍 Заголовки:", Object.keys(req.headers));
+  console.log("🔍 Cookie:", req.cookies);
+  
   if (authHeader && authHeader.startsWith("Bearer ")) {
     token = authHeader.split(" ")[1];
     console.log("🔑 Токен получен из заголовка Authorization");
@@ -632,10 +636,11 @@ app.post("/api/auth", authLimiter, async (req, res) => {
       // --- Устанавливаем cookie с токеном ---
       res.cookie('token', token, {
         httpOnly: true,
-        secure: true,
-        sameSite: 'Strict',
+        secure: false, // Изменено с true на false для локальной разработки
+        sameSite: 'Lax', // Изменено с 'Strict' на 'Lax'
         maxAge: 30 * 24 * 60 * 60 * 1000
       })
+      console.log("🍪 Cookie установлен для пользователя:", user.username)
       // ---
       res.json({
         success: true,
@@ -664,10 +669,11 @@ app.post("/api/auth", authLimiter, async (req, res) => {
       // --- Устанавливаем cookie с токеном ---
       res.cookie('token', token, {
         httpOnly: true,
-        secure: true,
-        sameSite: 'Strict',
+        secure: false, // Изменено с true на false для локальной разработки
+        sameSite: 'Lax', // Изменено с 'Strict' на 'Lax'
         maxAge: 30 * 24 * 60 * 60 * 1000
       })
+      console.log("🍪 Cookie установлен для пользователя:", user.username)
       // ---
       res.json({
         success: true,
@@ -1696,7 +1702,7 @@ const ChatSchema = new Schema({
 
 const MessageSchema = new Schema({
   sender: { type: Schema.Types.ObjectId, ref: "User" },
-  chat: { type: Schema.Types.ObjectId, ref: "Chat" },
+  chat: { type: String, required: true }, // Изменено с ObjectId на String
   content: String,
   timestamp: { type: Date, default: Date.now },
   type: String,
