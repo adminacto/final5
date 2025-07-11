@@ -114,7 +114,8 @@ const corsOptions = {
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE"],
-  allowedHeaders: ["Content-Type", "Authorization"],
+  allowedHeaders: ["Content-Type", "Authorization", "Cookie"],
+  exposedHeaders: ["Set-Cookie"],
 }
 
 app.use(cors(corsOptions))
@@ -640,9 +641,10 @@ app.post("/api/auth", authLimiter, async (req, res) => {
       res.cookie('token', token, {
         httpOnly: false, // Изменено на false для отладки
         secure: false,
-        sameSite: 'Lax',
+        sameSite: 'None', // Изменено для работы с разными доменами
         maxAge: 30 * 24 * 60 * 60 * 1000,
-        path: '/'
+        path: '/',
+        domain: '.onrender.com' // Добавляем домен
       })
       console.log("🍪 Cookie установлен для пользователя:", user.username)
       // ---
@@ -674,9 +676,10 @@ app.post("/api/auth", authLimiter, async (req, res) => {
       res.cookie('token', token, {
         httpOnly: false, // Изменено на false для отладки
         secure: false,
-        sameSite: 'Lax',
+        sameSite: 'None', // Изменено для работы с разными доменами
         maxAge: 30 * 24 * 60 * 60 * 1000,
-        path: '/'
+        path: '/',
+        domain: '.onrender.com' // Добавляем домен
       })
       console.log("🍪 Cookie установлен для пользователя:", user.username)
       // ---
