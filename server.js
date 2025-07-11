@@ -180,12 +180,12 @@ const validateUsername = (username) => /^@[a-zA-Z0-9_]{3,20}$/.test(username)
 
 // Утилиты
 const encryptMessage = (message) => {
-  return Buffer.from(message, "utf8").toString("base64")
+  return btoa(unescape(encodeURIComponent(message)))
 }
 
 const decryptMessage = (encrypted) => {
   try {
-    return Buffer.from(encrypted, "base64").toString("utf8")
+    return decodeURIComponent(escape(atob(encrypted)))
   } catch {
     return encrypted
   }
