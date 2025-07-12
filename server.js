@@ -14,7 +14,7 @@ const fs = require("fs")
 const multer = require("multer")
 const cookieParser = require("cookie-parser")
 
-// Инициализация приложения
+// Инициализация приложенияa
 const app = express()
 const server = http.createServer(app)
 
@@ -55,6 +55,28 @@ const avatarsDir = path.join(__dirname, "public", "avatars")
 if (!fs.existsSync(avatarsDir)) {
   fs.mkdirSync(avatarsDir, { recursive: true })
 }
+
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, avatarsDir)
+  },
+  filename: function (req, file, cb) {
+    const ext = path.extname(file.originalname)
+    const uniqueName = `${Date.now()}_${Math.round(Math.random() * 1e9)}${ext}`
+    cb(null, uniqueName)
+  },
+})
+const upload = multer({
+  storage,
+  limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
+  fileFilter: (req, file, cb) => {
+    if (["image/jpeg", "image/png", "image/webp"].includes(file.mimetype)) {
+      cb(null, true)
+    } else {
+      cb(new Error("Только изображения (jpg, png, webp)"))
+    }
+  },
+})
 
 // Конфигурация
 const JWT_SECRET = process.env.JWT_SECRET || "actogram_ultra_secure_key_2024_v3"
