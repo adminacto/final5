@@ -1798,7 +1798,7 @@ app.post("/api/ban-user", authenticateToken, async (req, res) => {
 // Endpoint для загрузки изображения в чат
 app.post("/api/upload-image", authenticateToken, upload.single("image"), async (req, res) => {
   try {
-    console.log("📷 Запрос на загрузку изображения (Cloudinary)")
+    console.log("📷 Запрос на загрузку изображения (локально)")
     console.log("📷 Файл:", req.file)
     console.log("📷 Body:", req.body)
     console.log("📷 User:", req.user)
@@ -1830,8 +1830,7 @@ app.post("/api/upload-image", authenticateToken, upload.single("image"), async (
       return res.status(403).json({ error: "Нет доступа к этому чату" })
     }
     
-    // Cloudinary URL
-    const imageUrl = req.file.path;
+    const imageUrl = `/avatars/${req.file.filename}`
     
     // Создаем сообщение с изображением
     const message = await Message.create({
@@ -1873,7 +1872,7 @@ app.post("/api/upload-image", authenticateToken, upload.single("image"), async (
       imageUrl: imageUrl 
     })
     
-    console.log(`📷 Изображение загружено (Cloudinary): ${user.username} -> ${chatId}`)
+    console.log(`📷 Изображение загружено (локально): ${user.username} -> ${chatId}`)
   } catch (error) {
     console.error("upload-image error:", error)
     res.status(500).json({ error: "Ошибка загрузки изображения" })
