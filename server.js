@@ -789,7 +789,8 @@ app.get("/api/messages/:chatId", authenticateToken, async (req, res) => {
     }
     
     const chatMessages = await Message.find({ chat: chatId })
-      .sort({ timestamp: 1 }) // Изменено с -1 на 1 - старые сообщения сверху
+      .populate("sender", "username fullName") // Добавляем информацию об отправителе
+      .sort({ timestamp: 1 })
       .skip(skip)
       .limit(limit)
       .lean()
@@ -798,16 +799,11 @@ app.get("/api/messages/:chatId", authenticateToken, async (req, res) => {
     const messagesWithReply = await Promise.all(chatMessages.map(async (msg) => {
       let replyTo = null
       if (msg.replyTo) {
-        const originalMsg = await Message.findById(msg.replyTo).lean()
+        const originalMsg = await Message.findById(msg.replyTo).populate("sender", "username fullName").lean()
         if (originalMsg) {
           let senderName = "Неизвестно"
           if (originalMsg.sender) {
-            const senderUser = await User.findById(originalMsg.sender).lean()
-            if (senderUser) {
-              senderName = senderUser.username || senderUser.fullName || "Неизвестно"
-            } else if (typeof originalMsg.sender === "string") {
-              senderName = originalMsg.sender // если вдруг sender — это строка (username)
-            }
+            senderName = originalMsg.sender.username || originalMsg.sender.fullName || "Неизвестно"
           }
           replyTo = {
             id: originalMsg._id?.toString() || originalMsg._id,
@@ -819,7 +815,8 @@ app.get("/api/messages/:chatId", authenticateToken, async (req, res) => {
       return {
         ...msg,
         id: msg._id?.toString() || msg._id,
-        senderId: msg.sender?.toString() || msg.sender,
+        senderId: msg.sender?._id?.toString() || msg.sender?.toString() || msg.sender,
+        senderName: msg.sender?.username || msg.sender?.fullName || "Неизвестно", // Добавляем имя отправителя
         chatId: msg.chat?.toString() || msg.chat,
         content: msg.isEncrypted ? decryptMessage(msg.content) : msg.content,
         replyTo, // теперь это объект, а не id
@@ -884,21 +881,30 @@ io.on("connection", async (socket) => {
   await User.findByIdAndUpdate(user.id, { isOnline: true, lastSeen: new Date(), status: "online" })
   userHeartbeats.set(user.id, Date.now())
 
-  // Присоединяем пользователя ко всем его чатам (MongoDB)
-  try {
-    const userChats = await Chat.find({ participants: user.id }).lean()
-    for (const chat of userChats) {
-      socket.join(chat._id.toString())
+      // Присоединяем пользователя ко всем его чатам (MongoDB)
+    try {
+      const userChats = await Chat.find({ participants: user.id }).lean()
+      for (const chat of userChats) {
+        socket.join(chat._id.toString())
+      }
+      
+      // Всегда присоединяем к глобальному чату и добавляем пользователя в участники
+      socket.join("global")
+      globalChatOnline.add(socket.id);
+      io.to('global').emit('global_online_count', globalChatOnline.size);
+      
+      // Добавляем пользователя в участники глобального чата если его там нет
+      const globalChat = await Chat.findById("global");
+      if (globalChat && !globalChat.participants.includes(user.id)) {
+        globalChat.participants.push(user.id);
+        await globalChat.save();
+        console.log(`🌍 ${user.username} добавлен в участники глобального чата`)
+      }
+      
+      console.log(`🌍 ${user.username} присоединен к глобальному чату`)
+    } catch (error) {
+      console.error("Error joining user chats:", error)
     }
-    
-    // Всегда присоединяем к глобальному чату
-    socket.join("global")
-    globalChatOnline.add(socket.id);
-    io.to('global').emit('global_online_count', globalChatOnline.size);
-    console.log(`🌍 ${user.username} присоединен к глобальному чату`)
-  } catch (error) {
-    console.error("Error joining user chats:", error)
-  }
 
   // Получение чатов пользователя (MongoDB)
   socket.on("get_my_chats", async (userId) => {
@@ -968,41 +974,56 @@ io.on("connection", async (socket) => {
     }
   })
 
-  // Получение сообщений (MongoDB)
-  socket.on("get_messages", async (data) => {
-    try {
-      const { chatId, userId, page = 0, limit = 50 } = data
-      if (userId !== user.id) return
+      // Получение сообщений (MongoDB)
+    socket.on("get_messages", async (data) => {
+      try {
+        const { chatId, userId } = data
+        const page = 0
+        const limit = 50
+        const skip = page * limit
+        
+        console.log(`📨 Запрос сообщений для чата: ${chatId}`)
+        
+        // Для глобального чата разрешаем всем пользователям получать сообщения
+        const isGlobalChat = chatId === "global"
+        if (!isGlobalChat) {
+          const chat = await Chat.findById(chatId).lean()
+          if (!chat) {
+            console.log(`❌ Чат не найден: ${chatId}`)
+            socket.emit("chat_messages", { chatId, messages: [] })
+            return
+          }
+          
+          const isParticipant = chat.participants.filter(p => p !== null).map((id) => id.toString()).includes(user.id)
+          if (!isParticipant) {
+            console.log(`❌ Пользователь не является участником чата: ${chatId}`)
+            socket.emit("chat_messages", { chatId, messages: [] })
+            return
+          }
+        }
 
-      const skip = page * limit
-      const chat = await Chat.findById(chatId)
-      if (!chat) return
+        const chatMessages = await Message.find({ chat: chatId })
+          .populate("sender", "username fullName") // Добавляем информацию об отправителе
+          .sort({ timestamp: 1 })
+          .skip(skip)
+          .limit(limit)
+          .lean()
 
-      // Для глобального чата разрешаем всем пользователям получать сообщения
-      const isGlobalChat = chatId === "global"
-      const isParticipant = isGlobalChat || chat.participants.filter(p => p !== null).map((id) => id.toString()).includes(user.id)
-      if (!isParticipant) return
+        const decryptedMessages = chatMessages.map((msg) => ({
+          ...msg,
+          id: msg._id?.toString() || msg._id,
+          senderId: msg.sender?._id?.toString() || msg.sender?.toString() || msg.sender,
+          senderName: msg.sender?.username || msg.sender?.fullName || "Неизвестно", // Добавляем имя отправителя
+          chatId: msg.chat?.toString() || msg.chat,
+          content: msg.isEncrypted ? decryptMessage(msg.content) : msg.content,
+        }))
 
-      const chatMessages = await Message.find({ chat: chatId })
-        .sort({ timestamp: 1 }) // Изменено с -1 на 1 - старые сообщения сверху
-        .skip(skip)
-        .limit(limit)
-        .lean()
-
-      const decryptedMessages = chatMessages.map((msg) => ({
-        ...msg,
-        id: msg._id?.toString() || msg._id,
-        senderId: msg.sender?.toString() || msg.sender,
-        chatId: msg.chat?.toString() || msg.chat,
-        content: msg.isEncrypted ? decryptMessage(msg.content) : msg.content,
-      }))
-
-      socket.emit("chat_messages", { chatId, messages: decryptedMessages })
-    } catch (error) {
-      console.error("get_messages error:", error)
-      socket.emit("chat_messages", { chatId: data?.chatId || "unknown", messages: [] })
-    }
-  })
+        socket.emit("chat_messages", { chatId, messages: decryptedMessages })
+      } catch (error) {
+        console.error("get_messages error:", error)
+        socket.emit("chat_messages", { chatId: data?.chatId || "unknown", messages: [] })
+      }
+    })
 
   // Поиск пользователей (MongoDB)
   socket.on("search_users", async (query) => {
@@ -1128,9 +1149,19 @@ io.on("connection", async (socket) => {
     try {
       console.log(`📥 Попытка присоединения к чату: ${user.username} -> ${chatId}`)
       
+      // Для глобального чата не проверяем существование
+      if (chatId === "global") {
+        socket.join(chatId)
+        globalChatOnline.add(socket.id)
+        io.to('global').emit('global_online_count', globalChatOnline.size)
+        console.log(`✅ ${user.username} присоединился к глобальному чату`)
+        return
+      }
+      
       const chat = await Chat.findById(chatId)
       if (!chat) {
         console.log(`❌ Чат не найден: ${chatId}`)
+        socket.emit("error", { message: "Чат не найден" })
         return
       }
 
@@ -1138,22 +1169,18 @@ io.on("connection", async (socket) => {
       console.log(`👤 Текущий пользователь: ${user.id}`)
       
       // Проверяем, является ли пользователь участником чата
-      // Для глобального чата разрешаем всем пользователям присоединяться
-      const isGlobalChat = chatId === "global"
-      const isParticipant = isGlobalChat || chat.participants.some(p => p && p.toString() === user.id)
+      const isParticipant = chat.participants.some(p => p && p.toString() === user.id)
       if (!isParticipant) {
         console.log(`❌ Пользователь ${user.username} не является участником чата ${chatId}`)
+        socket.emit("error", { message: "Вы не являетесь участником этого чата" })
         return
       }
 
       socket.join(chatId)
       console.log(`✅ ${user.username} присоединился к чату: ${chatId}`)
-      if (chatId === "global") {
-        globalChatOnline.add(socket.id);
-        io.to('global').emit('global_online_count', globalChatOnline.size);
-      }
     } catch (error) {
       console.error("join_chat error:", error)
+      socket.emit("error", { message: "Ошибка присоединения к чату" })
     }
   })
 
@@ -1162,7 +1189,7 @@ io.on("connection", async (socket) => {
     try {
       console.log(`📤 Попытка отправки сообщения: ${user.username} -> ${messageData.chatId}`)
       console.log(`📤 Данные сообщения:`, messageData)
-      
+    
       let chat = await Chat.findById(messageData.chatId)
       if (!chat) {
         console.log(`❌ Чат не найден: ${messageData.chatId}`)
@@ -1199,6 +1226,7 @@ io.on("connection", async (socket) => {
         
         if (!chat) {
           console.log(`❌ Не удалось создать чат: ${messageData.chatId}`)
+          socket.emit("error", { message: "Чат не найден и не может быть создан" })
           return
         }
       }
@@ -1212,6 +1240,7 @@ io.on("connection", async (socket) => {
       const isParticipant = isGlobalChat || chat.participants.some(p => p && p.toString() === user.id)
       if (!isParticipant) {
         console.log(`❌ Пользователь ${user.username} не является участником чата ${messageData.chatId}`)
+        socket.emit("error", { message: "Вы не являетесь участником этого чата" })
         return
       }
       
@@ -1227,7 +1256,8 @@ io.on("connection", async (socket) => {
       }
 
       // Ограничение на количество слов (100 слов для всех чатов)
-      const wordCount = (messageData.content ? (messageData.isEncrypted ? decryptMessage(messageData.content) : messageData.content) : "").split(/\s+/).filter(Boolean).length;
+      const originalContent = messageData.isEncrypted ? decryptMessage(messageData.content) : messageData.content;
+      const wordCount = originalContent.split(/\s+/).filter(Boolean).length;
       if (wordCount > 100) {
         socket.emit("error", { message: "Сообщение не должно содержать более 100 слов!" });
         return;
@@ -1236,6 +1266,7 @@ io.on("connection", async (socket) => {
       // Валидация сообщения
       if (!messageData.content || typeof messageData.content !== 'string' || messageData.content.trim().length === 0) {
         console.log(`❌ Неверное содержимое сообщения`)
+        socket.emit("error", { message: "Сообщение не может быть пустым" })
         return
       }
       
@@ -1244,11 +1275,11 @@ io.on("connection", async (socket) => {
         return
       }
       
-      // Создать сообщение
+      // Создать сообщение - сохраняем как есть (уже зашифрованное с клиента)
       const message = await Message.create({
         sender: user.id,
         chat: chat._id,
-        content: messageData.content,
+        content: messageData.content, // Сохраняем зашифрованное содержимое
         timestamp: new Date(),
         type: messageData.type || "text",
         fileUrl: messageData.fileUrl,
@@ -1280,13 +1311,14 @@ io.on("connection", async (socket) => {
           };
         }
       }
+      
       const msgObj = {
         ...message.toObject(),
         id: message._id?.toString() || message._id,
         senderId: user.id,
         senderName: user.username,
         chatId: chat._id?.toString() || chat._id,
-        content: message.isEncrypted ? decryptMessage(message.content) : message.content,
+        content: messageData.content, // Отправляем как есть - клиент сам расшифрует
         replyTo: replyToData,
       }
       
@@ -1304,16 +1336,21 @@ io.on("connection", async (socket) => {
       
       // Если чат приватный, отправить событие 'new_private_chat' второму участнику
       if (chat.type === "private") {
+        console.log(`💬 Приватный чат, участники:`, chat.participants)
         chat.participants.forEach((participantId) => {
           if (participantId.toString() !== user.id) {
+            console.log(`🔍 Ищем сокет для пользователя: ${participantId}`)
             const targetSocket = Array.from(io.sockets.sockets.values()).find((s) => s.userId === participantId.toString());
             if (targetSocket) {
+              console.log(`✅ Найден сокет для пользователя ${participantId}, отправляем уведомление о новом чате`)
               // Проверяем, есть ли у пользователя этот чат (можно добавить проверку, если нужно)
               targetSocket.emit("new_private_chat", {
                 ...chat,
                 id: chat._id?.toString() || chat._id,
                 participants: chat.participants,
               });
+            } else {
+              console.log(`⚠️ Сокет для пользователя ${participantId} не найден`)
             }
           }
         });
@@ -1577,20 +1614,20 @@ const cleanupInactiveUsers = async () => {
 // Запускаем очистку каждые 30 секунд
 setInterval(cleanupInactiveUsers, 30000)
 
-// Автоочистка общего чата каждый день в 4:00 утра
-let lastGlobalChatCleanupDay = null;
-setInterval(async () => {
-  const now = new Date();
-  if (now.getHours() === 4 && now.getMinutes() === 0) {
-    const today = now.toISOString().slice(0, 10);
-    if (lastGlobalChatCleanupDay !== today) {
-      await Message.deleteMany({ chat: 'global' });
-      io.to('global').emit('chat_cleared', { chatId: 'global' });
-      lastGlobalChatCleanupDay = today;
-      console.log('🌍 Общий чат автоматически очищен в 4:00 утра');
-    }
-  }
-}, 60 * 1000);
+// Автоочистка общего чата отключена - чат теперь постоянный
+// let lastGlobalChatCleanupDay = null;
+// setInterval(async () => {
+//   const now = new Date();
+//   if (now.getHours() === 4 && now.getMinutes() === 0) {
+//     const today = now.toISOString().slice(0, 10);
+//     if (lastGlobalChatCleanupDay !== today) {
+//       await Message.deleteMany({ chat: 'global' });
+//       io.to('global').emit('chat_cleared', { chatId: 'global' });
+//       lastGlobalChatCleanupDay = today;
+//       console.log('🌍 Общий чат автоматически очищен в 4:00 утра');
+//     }
+//   }
+// }, 60 * 1000);
 
 // Запуск сервера
 server.listen(PORT, () => {
@@ -1794,6 +1831,25 @@ app.post("/api/ban-user", authenticateToken, async (req, res) => {
   } catch (error) {
     console.error("ban-user error:", error)
     res.status(500).json({ error: "Ошибка бана пользователя" })
+  }
+})
+
+// Endpoint для очистки общего чата (только для админа)
+app.post("/api/clear-global-chat", authenticateToken, async (req, res) => {
+  try {
+    const { username } = req.user
+    if (username !== "@adminstator") {
+      return res.status(403).json({ error: "Только администратор может очищать общий чат" })
+    }
+    
+    await Message.deleteMany({ chat: 'global' });
+    io.to('global').emit('chat_cleared', { chatId: 'global' });
+    
+    console.log('🌍 Общий чат очищен администратором');
+    res.json({ success: true, message: "Общий чат очищен" });
+  } catch (error) {
+    console.error("clear-global-chat error:", error)
+    res.status(500).json({ error: "Ошибка очистки общего чата" })
   }
 })
 
