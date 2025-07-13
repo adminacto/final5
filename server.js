@@ -1278,7 +1278,7 @@ io.on("connection", async (socket) => {
       // Создать сообщение - сохраняем как есть (уже зашифрованное с клиента)
       const message = await Message.create({
         sender: user.id,
-        chat: chat._id,
+        chat: chat._id.toString(), // Исправляем - сохраняем как строку
         content: messageData.content, // Сохраняем зашифрованное содержимое
         timestamp: new Date(),
         type: messageData.type || "text",
