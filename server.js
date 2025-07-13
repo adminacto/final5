@@ -1630,7 +1630,15 @@ setInterval(cleanupInactiveUsers, 30000)
 // }, 60 * 1000);
 
 // Запуск сервера
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
+  // Очищаем глобальный чат при запуске
+  try {
+    await Message.deleteMany({ chat: 'global' });
+    console.log('🌍 Глобальный чат очищен при запуске сервера');
+  } catch (error) {
+    console.error('Ошибка очистки глобального чата:', error);
+  }
+  
   console.log(`
 🚀 ACTOGRAM Server v3.0 запущен на порту ${PORT}
 📱 Клиент: https://acto-uimuz.vercel.app  
@@ -1834,19 +1842,14 @@ app.post("/api/ban-user", authenticateToken, async (req, res) => {
   }
 })
 
-// Endpoint для очистки общего чата (только для админа)
+// Endpoint для очистки общего чата (для всех пользователей)
 app.post("/api/clear-global-chat", authenticateToken, async (req, res) => {
   try {
-    const { username } = req.user
-    if (username !== "@adminstator") {
-      return res.status(403).json({ error: "Только администратор может очищать общий чат" })
-    }
-    
     await Message.deleteMany({ chat: 'global' });
     io.to('global').emit('chat_cleared', { chatId: 'global' });
     
-    console.log('🌍 Общий чат очищен администратором');
-    res.json({ success: true, message: "Общий чат очищен" });
+    console.log('🌍 Общий чат полностью очищен');
+    res.json({ success: true, message: "Общий чат полностью очищен" });
   } catch (error) {
     console.error("clear-global-chat error:", error)
     res.status(500).json({ error: "Ошибка очистки общего чата" })
