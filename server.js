@@ -1572,6 +1572,24 @@ io.on("connection", async (socket) => {
     })))
     console.log(`🔌 Отключение: ${user.username}`)
   })
+
+  // --- ОБРАБОТЧИК ПРОЧТЕНИЯ СООБЩЕНИЙ ---
+  socket.on("messages_read", async ({ chatId, messageIds, userId }) => {
+    try {
+      // Найти все сообщения по chatId и messageIds
+      const messages = await Message.find({ chat: chatId, _id: { $in: messageIds } });
+      for (const msg of messages) {
+        if (!msg.readBy.includes(userId)) {
+          msg.readBy.push(userId);
+          await msg.save();
+        }
+      }
+      // Отправить событие всем участникам чата
+      io.to(chatId).emit("messages_read", { messageIds, userId });
+    } catch (error) {
+      console.error("messages_read error:", error);
+    }
+  });
 })
 
 // Функция очистки неактивных пользователей
