@@ -1,5 +1,6 @@
-// Загружаем переменные окружения из database.env
-require('dotenv').config({ path: './database.env' })
+// Загружаем переменные окружения
+require('dotenv').config()
+console.log("📁 Переменные окружения загружены")
 
 const express = require("express")
 const http = require("http")
@@ -1678,11 +1679,9 @@ const connectToMongoDB = async () => {
     connectionAttempts++;
     console.log(`🔄 Попытка подключения к MongoDB (${connectionAttempts}/${maxConnectionAttempts})`);
     
-    // Используем переменную окружения MONGO_URI
-    const mongoUri = process.env.MONGO_URI;
-    if (!mongoUri) {
-      throw new Error("MONGO_URI не найден в переменных окружения");
-    }
+    // Используем переменную окружения MONGO_URI или fallback
+    const mongoUri = process.env.MONGO_URI || "mongodb+srv://actogol:actogolsila@actogramuz.6ogftpx.mongodb.net/?retryWrites=true&w=majority&appName=actogramUZ";
+    console.log("🔗 MongoDB URI:", mongoUri.substring(0, 50) + "...");
     
     console.log("🔗 Подключение к MongoDB с URI из переменных окружения");
     await mongoose.connect(mongoUri, {
