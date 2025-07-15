@@ -1,3 +1,6 @@
+// Загружаем переменные окружения из database.env
+require('dotenv').config({ path: './database.env' })
+
 const express = require("express")
 const http = require("http")
 const socketIo = require("socket.io")
@@ -1674,7 +1677,15 @@ const connectToMongoDB = async () => {
   try {
     connectionAttempts++;
     console.log(`🔄 Попытка подключения к MongoDB (${connectionAttempts}/${maxConnectionAttempts})`);
-    await mongoose.connect("mongodb+srv://actogol:actogolsila@actogramuz.6ogftpx.mongodb.net/actogram?retryWrites=true&w=majority&appName=actogramUZ", {
+    
+    // Используем переменную окружения MONGO_URI
+    const mongoUri = process.env.MONGO_URI;
+    if (!mongoUri) {
+      throw new Error("MONGO_URI не найден в переменных окружения");
+    }
+    
+    console.log("🔗 Подключение к MongoDB с URI из переменных окружения");
+    await mongoose.connect(mongoUri, {
       serverSelectionTimeoutMS: 10000,
       socketTimeoutMS: 45000,
     });
@@ -1687,7 +1698,7 @@ const connectToMongoDB = async () => {
       console.error("🚫 Превышено максимальное количество попыток подключения");
       console.log("💡 Проверьте настройки MongoDB Atlas:");
       console.log("   1. IP адреса в Network Access");
-      console.log("   2. Правильность строки подключения");
+      console.log("   2. Правильность строки подключения в database.env");
       console.log("   3. Статус кластера");
       return;
     }
