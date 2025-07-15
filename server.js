@@ -1,7 +1,3 @@
-// Загружаем переменные окружения
-require('dotenv').config()
-console.log("📁 Переменные окружения загружены")
-
 const express = require("express")
 const http = require("http")
 const socketIo = require("socket.io")
@@ -1679,11 +1675,9 @@ const connectToMongoDB = async () => {
     connectionAttempts++;
     console.log(`🔄 Попытка подключения к MongoDB (${connectionAttempts}/${maxConnectionAttempts})`);
     
-    // Используем переменную окружения MONGO_URI или fallback
-    const mongoUri = process.env.MONGO_URI || "mongodb+srv://actogol:actogolsila@actogramuz.6ogftpx.mongodb.net/?retryWrites=true&w=majority&appName=actogramUZ";
-    console.log("🔗 MongoDB URI:", mongoUri.substring(0, 50) + "...");
-    
-    console.log("🔗 Подключение к MongoDB с URI из переменных окружения");
+    // Прямое подключение к MongoDB
+    const mongoUri = "mongodb+srv://actogol:actogolsila@actogramuz.6ogftpx.mongodb.net/?retryWrites=true&w=majority&appName=actogramUZ";
+    console.log("🔗 Подключение к MongoDB напрямую");
     await mongoose.connect(mongoUri, {
       serverSelectionTimeoutMS: 10000,
       socketTimeoutMS: 45000,
@@ -1697,7 +1691,7 @@ const connectToMongoDB = async () => {
       console.error("🚫 Превышено максимальное количество попыток подключения");
       console.log("💡 Проверьте настройки MongoDB Atlas:");
       console.log("   1. IP адреса в Network Access");
-      console.log("   2. Правильность строки подключения в database.env");
+      console.log("   2. Правильность строки подключения");
       console.log("   3. Статус кластера");
       return;
     }
