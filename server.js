@@ -1631,12 +1631,12 @@ setInterval(cleanupInactiveUsers, 30000)
 
 // Запуск сервера
 server.listen(PORT, async () => {
-  // Очищаем глобальный чат при запуске
+  // Проверяем количество сообщений в глобальном чате
   try {
-    await Message.deleteMany({ chat: 'global' });
-    console.log('🌍 Глобальный чат очищен при запуске сервера');
+    const messageCount = await Message.countDocuments({ chat: 'global' });
+    console.log(`🌍 В глобальном чате ${messageCount} сообщений`);
   } catch (error) {
-    console.error('Ошибка очистки глобального чата:', error);
+    console.error('Ошибка проверки глобального чата:', error);
   }
   
   console.log(`
@@ -1674,11 +1674,7 @@ const connectToMongoDB = async () => {
   try {
     connectionAttempts++;
     console.log(`🔄 Попытка подключения к MongoDB (${connectionAttempts}/${maxConnectionAttempts})`);
-    
-    // Прямое подключение к MongoDB
-    const mongoUri = "mongodb+srv://actogol:actogolsila@actogramuz.6ogftpx.mongodb.net/?retryWrites=true&w=majority&appName=actogramUZ";
-    console.log("🔗 Подключение к MongoDB напрямую");
-    await mongoose.connect(mongoUri, {
+    await mongoose.connect("mongodb+srv://actogol:actogolsila@actogramuz.6ogftpx.mongodb.net/actogram?retryWrites=true&w=majority&appName=actogramUZ", {
       serverSelectionTimeoutMS: 10000,
       socketTimeoutMS: 45000,
     });
