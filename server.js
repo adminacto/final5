@@ -68,9 +68,13 @@ const storage = multer.diskStorage({
 })
 const upload = multer({
   storage,
-  limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
+  limits: { 
+    fileSize: 10 * 1024 * 1024, // 10MB - увеличили лимит
+    files: 1 // только один файл
+  },
   fileFilter: (req, file, cb) => {
-    if (["image/jpeg", "image/png", "image/webp"].includes(file.mimetype)) {
+    console.log("📷 Проверка файла:", file.originalname, file.mimetype, file.size)
+    if (["image/jpeg", "image/png", "image/webp", "image/jpg"].includes(file.mimetype)) {
       cb(null, true)
     } else {
       cb(new Error("Только изображения (jpg, png, webp)"))
@@ -733,37 +737,38 @@ app.get("/api/chats", authenticateToken, async (req, res) => {
         }
       })
     )
-    
-    // Всегда добавляем глобальный чат в начало списка
+
+    // Фильтруем чаты: оставляем только те, где есть сообщения
+    let filteredChats = chatList.filter(chat => chat.messageCount > 0)
+
+    // Добавляем глобальный чат только если в нем есть сообщения
     const globalChat = await Chat.findById("global").lean();
     if (globalChat) {
-      // Получаем последнее сообщение и количество сообщений для глобального чата
       const globalLastMessage = await Message.findOne({ chat: "global" })
         .sort({ timestamp: -1 })
         .lean()
       const globalMessageCount = await Message.countDocuments({ chat: "global" })
-      
-      // Добавляем глобальный чат в начало списка
-      chatList.unshift({
-        ...globalChat,
-        id: globalChat._id?.toString() || globalChat._id,
-        participants: globalChat.participants || [],
-        lastMessage: globalLastMessage
-          ? {
-              ...globalLastMessage,
-              id: globalLastMessage._id?.toString() || globalLastMessage._id,
-              senderId: globalLastMessage.sender?.toString() || globalLastMessage.sender,
-              chatId: globalLastMessage.chat?.toString() || globalLastMessage.chat,
-            }
-          : null,
-        messageCount: globalMessageCount,
-        unreadCount: 0,
-      });
-      console.log("🌍 Глобальный чат добавлен в список");
+
+      if (globalMessageCount > 0) {
+        filteredChats.unshift({
+          ...globalChat,
+          id: globalChat._id?.toString() || globalChat._id,
+          participants: globalChat.participants || [],
+          lastMessage: globalLastMessage
+            ? {
+                ...globalLastMessage,
+                id: globalLastMessage._id?.toString() || globalLastMessage._id,
+                senderId: globalLastMessage.sender?.toString() || globalLastMessage.sender,
+                chatId: globalLastMessage.chat?.toString() || globalLastMessage.chat,
+              }
+            : null,
+          messageCount: globalMessageCount,
+          unreadCount: 0,
+        });
+      }
     }
-    
-    console.log("📋 Отправляем список чатов:", chatList.length, "чатов");
-    res.json(chatList)
+
+    res.json(filteredChats)
   } catch (error) {
     console.error("/api/chats error:", error)
     res.status(500).json({ error: "Ошибка сервера" })
@@ -880,6 +885,13 @@ io.on("connection", async (socket) => {
   // При подключении обновлять статус пользователя в MongoDB
   await User.findByIdAndUpdate(user.id, { isOnline: true, lastSeen: new Date(), status: "online" })
   userHeartbeats.set(user.id, Date.now())
+  
+  // Уведомляем всех о изменении статуса пользователя
+  io.emit("user_status_change", { 
+    userId: user.id, 
+    status: "online", 
+    isOnline: true 
+  })
 
       // Присоединяем пользователя ко всем его чатам (MongoDB)
     try {
@@ -1189,46 +1201,12 @@ io.on("connection", async (socket) => {
     try {
       console.log(`📤 Попытка отправки сообщения: ${user.username} -> ${messageData.chatId}`)
       console.log(`📤 Данные сообщения:`, messageData)
-    
+  
       let chat = await Chat.findById(messageData.chatId)
       if (!chat) {
         console.log(`❌ Чат не найден: ${messageData.chatId}`)
-        
-        // Попробуем создать чат, если он не существует
-        if (messageData.chatId.startsWith('private_')) {
-          const participantIds = messageData.chatId.replace('private_', '').split('_')
-          if (participantIds.length >= 2) {
-            console.log(`📝 Попытка создания чата: ${messageData.chatId}`)
-            
-            // Найти собеседника (не текущего пользователя)
-            const otherUserId = participantIds.find(id => id !== user.id)
-            const otherUser = otherUserId ? await User.findById(otherUserId).lean() : null
-            const otherUserName = otherUser ? otherUser.username : "Неизвестно"
-            
-            chat = await Chat.create({
-              _id: messageData.chatId,
-              name: otherUserName, // Используем имя собеседника
-              avatar: otherUser?.avatar || null,
-              description: `Приватный чат с ${otherUserName}`,
-              isGroup: false,
-              participants: participantIds,
-              createdAt: new Date(),
-              type: "private",
-              isEncrypted: true,
-              createdBy: user.id,
-              theme: "default",
-              isPinned: false,
-              isMuted: false,
-            })
-            console.log(`✅ Чат создан автоматически: ${chat._id} с собеседником: ${otherUserName}`)
-          }
-        }
-        
-        if (!chat) {
-          console.log(`❌ Не удалось создать чат: ${messageData.chatId}`)
-          socket.emit("error", { message: "Чат не найден и не может быть создан" })
-          return
-        }
+        socket.emit("error", { message: "Чат не найден. Сообщение не отправлено." })
+        return
       }
       
       console.log(`📋 Участники чата:`, chat.participants)
@@ -1558,6 +1536,13 @@ io.on("connection", async (socket) => {
     userHeartbeats.delete(user.id)
     globalChatOnline.delete(socket.id);
     io.to('global').emit('global_online_count', globalChatOnline.size);
+    
+    // Уведомляем всех о изменении статуса пользователя
+    io.emit("user_status_change", { 
+      userId: user.id, 
+      status: "offline", 
+      isOnline: false 
+    })
     // Обновляем список активных пользователей
     const activeUsers = await User.find({ isOnline: true }).lean()
     io.emit("users_update", activeUsers.map((u) => ({
@@ -1572,6 +1557,56 @@ io.on("connection", async (socket) => {
     })))
     console.log(`🔌 Отключение: ${user.username}`)
   })
+
+  // ✓ Доставлено
+  socket.on("message_delivered", async ({ messageId, userId }) => {
+    try {
+      await Message.findByIdAndUpdate(messageId, { $addToSet: { deliveredTo: userId } });
+      const msg = await Message.findById(messageId);
+      if (msg) io.to(msg.chat).emit("message_status_update", { messageId, deliveredTo: userId });
+    } catch (error) {
+      console.error("message_delivered error:", error);
+    }
+  });
+
+  // ✓✓ Прочитано
+  socket.on("message_read", async ({ messageId, userId }) => {
+    try {
+      await Message.findByIdAndUpdate(messageId, { $addToSet: { readBy: userId } });
+      const msg = await Message.findById(messageId);
+      if (msg) io.to(msg.chat).emit("message_status_update", { messageId, readBy: userId });
+    } catch (error) {
+      console.error("message_read error:", error);
+    }
+  });
+
+  // --- Typing indicator ---
+  socket.on("typing_start", ({ chatId, userId, username }) => {
+    socket.to(chatId).emit("user_typing", { chatId, userId, username });
+  });
+  socket.on("typing_stop", ({ chatId, userId }) => {
+    socket.to(chatId).emit("user_stop_typing", { chatId, userId });
+  });
+
+  // --- Редактирование сообщения ---
+  socket.on("edit_message", async ({ messageId, newContent }) => {
+    try {
+      const msg = await Message.findByIdAndUpdate(messageId, { content: newContent, isEdited: true }, { new: true });
+      if (msg) io.to(msg.chat).emit("message_edited", msg);
+    } catch (error) {
+      console.error("edit_message error:", error);
+    }
+  });
+
+  // --- Удаление сообщения ---
+  socket.on("delete_message", async ({ messageId }) => {
+    try {
+      const msg = await Message.findByIdAndDelete(messageId);
+      if (msg) io.to(msg.chat).emit("message_deleted", messageId);
+    } catch (error) {
+      console.error("delete_message error:", error);
+    }
+  });
 })
 
 // Функция очистки неактивных пользователей
@@ -1752,7 +1787,7 @@ const ChatSchema = new Schema({
 
 const MessageSchema = new Schema({
   sender: { type: Schema.Types.ObjectId, ref: "User" },
-  chat: { type: String, required: true }, // Изменено с ObjectId на String
+  chat: { type: String, required: true },
   content: String,
   timestamp: { type: Date, default: Date.now },
   type: String,
@@ -1762,6 +1797,7 @@ const MessageSchema = new Schema({
   isEncrypted: Boolean,
   replyTo: { type: Schema.Types.ObjectId, ref: "Message" },
   reactions: [{ emoji: String, userId: String, username: String }],
+  deliveredTo: [String], // <--- добавлено для статуса доставки
   readBy: [String],
   isEdited: Boolean,
 });
@@ -1856,17 +1892,57 @@ app.post("/api/clear-global-chat", authenticateToken, async (req, res) => {
   }
 })
 
-// Endpoint для загрузки изображения в чат
-app.post("/api/upload-image", authenticateToken, upload.single("image"), async (req, res) => {
+// Endpoint для получения статусов пользователей
+app.get("/api/users/status", authenticateToken, async (req, res) => {
   try {
-    console.log("📷 Запрос на загрузку изображения (локально)")
-    console.log("📷 Файл:", req.file)
+    const users = await User.find({}, "_id username fullName avatar isOnline lastSeen status").lean()
+    const usersWithIds = users.map(user => ({
+      ...user,
+      id: user._id.toString()
+    }))
+    res.json(usersWithIds)
+  } catch (error) {
+    console.error("users/status error:", error)
+    res.status(500).json({ error: "Ошибка получения статусов пользователей" })
+  }
+})
+
+// Endpoint для загрузки изображения в чат
+app.post("/api/upload-image", authenticateToken, (req, res, next) => {
+  upload.single("image")(req, res, (err) => {
+    if (err) {
+      console.error("❌ Multer error:", err)
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(400).json({ error: "Файл слишком большой (максимум 10MB)" })
+      }
+      if (err.message.includes("Только изображения")) {
+        return res.status(400).json({ error: err.message })
+      }
+      return res.status(500).json({ error: "Ошибка загрузки файла" })
+    }
+    next()
+  })
+}, async (req, res) => {
+  try {
+    console.log("📷 Запрос на загрузку изображения")
+    console.log("📷 Файл:", req.file ? {
+      filename: req.file.filename,
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size
+    } : "Нет файла")
     console.log("📷 Body:", req.body)
     console.log("📷 User:", req.user)
     
     if (!req.file) {
       console.log("❌ Файл не загружен")
       return res.status(400).json({ error: "Файл не загружен" })
+    }
+    
+    // Проверяем размер файла
+    if (req.file.size > 10 * 1024 * 1024) {
+      console.log("❌ Файл слишком большой:", req.file.size)
+      return res.status(400).json({ error: "Файл слишком большой (максимум 10MB)" })
     }
     
     const userId = req.user.userId
@@ -1882,16 +1958,19 @@ app.post("/api/upload-image", authenticateToken, upload.single("image"), async (
     // Проверяем, что пользователь является участником чата
     const chat = await Chat.findById(chatId)
     if (!chat) {
+      console.log("❌ Чат не найден:", chatId)
       return res.status(404).json({ error: "Чат не найден" })
     }
     
     const isGlobalChat = chatId === "global"
     const isParticipant = isGlobalChat || chat.participants.some(p => p && p.toString() === userId)
     if (!isParticipant) {
+      console.log("❌ Пользователь не является участником чата")
       return res.status(403).json({ error: "Нет доступа к этому чату" })
     }
     
     const imageUrl = `/avatars/${req.file.filename}`
+    console.log("📷 URL изображения:", imageUrl)
     
     // Создаем сообщение с изображением
     const message = await Message.create({
@@ -1905,9 +1984,12 @@ app.post("/api/upload-image", authenticateToken, upload.single("image"), async (
       fileSize: req.file.size,
       isEncrypted: false,
       reactions: [],
+      deliveredTo: [],
       readBy: [userId],
       isEdited: false,
     })
+    
+    console.log("📷 Сообщение создано в БД:", message._id)
     
     // Получаем информацию о пользователе
     const user = await User.findById(userId).lean()
@@ -1924,6 +2006,8 @@ app.post("/api/upload-image", authenticateToken, upload.single("image"), async (
       fileSize: req.file.size,
     }
     
+    console.log("📷 Отправляем сообщение в чат:", chatId)
+    
     // Отправляем сообщение всем участникам чата
     io.to(chatId).emit("new_message", msgObj)
     
@@ -1933,9 +2017,9 @@ app.post("/api/upload-image", authenticateToken, upload.single("image"), async (
       imageUrl: imageUrl 
     })
     
-    console.log(`📷 Изображение загружено (локально): ${user.username} -> ${chatId}`)
+    console.log(`✅ Изображение загружено успешно: ${user.username} -> ${chatId}`)
   } catch (error) {
-    console.error("upload-image error:", error)
-    res.status(500).json({ error: "Ошибка загрузки изображения" })
+    console.error("❌ upload-image error:", error)
+    res.status(500).json({ error: "Ошибка загрузки изображения: " + error.message })
   }
 })
