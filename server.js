@@ -2023,3 +2023,61 @@ app.post("/api/upload-image", authenticateToken, (req, res, next) => {
     res.status(500).json({ error: "Ошибка загрузки изображения: " + error.message })
   }
 })
+
+// --- ADMIN MIDDLEWARE ---
+function requireAdmin(req, res, next) {
+  // req.user может быть только userId, username, email из JWT, поэтому нужно получить пользователя из БД
+  User.findById(req.user.userId).then(user => {
+    if (!user) return res.status(401).json({ error: 'Пользователь не найден' });
+    if (user.role !== 'admin') return res.status(403).json({ error: 'Требуется роль администратора' });
+    req.user = user; // обновляем req.user на полный объект
+    next();
+  }).catch(err => {
+    res.status(500).json({ error: 'Ошибка проверки роли администратора' });
+  });
+}
+
+// --- CORS ---
+const cors = require('cors');
+app.use(cors({
+  origin: true,
+  credentials: true,
+}));
+
+// --- ADMIN ROUTES ---
+// Получить всех пользователей (без пароля)
+app.get('/admin/users', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const users = await User.find({}, '-password');
+    res.json({ users });
+  } catch (err) {
+    res.status(500).json({ error: 'Ошибка получения пользователей' });
+  }
+});
+
+// Получить все сообщения
+app.get('/admin/messages', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const messages = await Message.find({});
+    res.json({ messages });
+  } catch (err) {
+    res.status(500).json({ error: 'Ошибка получения сообщений' });
+  }
+});
+
+// Забанить пользователя
+app.post('/admin/ban/:userId', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = await User.findByIdAndUpdate(userId, { status: 'banned' }, { new: true });
+    if (!user) return res.status(404).json({ error: 'Пользователь не найден' });
+    res.json({ success: true, user });
+  } catch (err) {
+    res.status(500).json({ error: 'Ошибка бана пользователя' });
+  }
+});
+
+// --- ДОБАВЛЯЕМ ROLE В UserSchema, если нет ---
+if (!UserSchema.paths.role) {
+  UserSchema.add({ role: { type: String, enum: ['user', 'admin'], default: 'user' } });
+}
