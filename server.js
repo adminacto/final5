@@ -68,13 +68,9 @@ const storage = multer.diskStorage({
 })
 const upload = multer({
   storage,
-  limits: { 
-    fileSize: 10 * 1024 * 1024, // 10MB - ÑÐ²ÐµÐ»Ð¸ÑÐ¸Ð»Ð¸ Ð»Ð¸Ð¼Ð¸Ñ
-    files: 1 // ÑÐ¾Ð»ÑÐºÐ¾ Ð¾Ð´Ð¸Ð½ ÑÐ°Ð¹Ð»
-  },
+  limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
   fileFilter: (req, file, cb) => {
-    console.log("ð· ÐÑÐ¾Ð²ÐµÑÐºÐ° ÑÐ°Ð¹Ð»Ð°:", file.originalname, file.mimetype, file.size)
-    if (["image/jpeg", "image/png", "image/webp", "image/jpg"].includes(file.mimetype)) {
+    if (["image/jpeg", "image/png", "image/webp"].includes(file.mimetype)) {
       cb(null, true)
     } else {
       cb(new Error("Ð¢Ð¾Ð»ÑÐºÐ¾ Ð¸Ð·Ð¾Ð±ÑÐ°Ð¶ÐµÐ½Ð¸Ñ (jpg, png, webp)"))
@@ -124,6 +120,12 @@ app.use(cors(corsOptions))
 app.use(express.json({ limit: "10mb" }))
 app.use(express.static(path.join(__dirname, "public")))
 app.use(cookieParser())
+
+// Устанавливаем правильную кодировку для HTML-ответов
+app.use((req, res, next) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  next();
+});
 
 // Socket.IO Ð½Ð°ÑÑÑÐ¾Ð¹ÐºÐ¸
 const io = socketIo(server, {
@@ -699,7 +701,7 @@ app.post("/api/auth", authLimiter, async (req, res) => {
   }
 })
 
-// ÐÐ¾Ð»ÑÑÐµÐ½Ð¸Ðµ ÑÐ°ÑÐ¾Ð² Ð¿Ð¾Ð»ÑÐ·Ð¾Ð²Ð°ÑÐµÐ»Ñ (MongoDB)
+// ÐÐ¾Ð»ÑÑÐµÐÐ¸Ðµ ÑÐ°ÑÐ¾Ð² Ð¿Ð¾Ð»ÑÐ·Ð¾Ð²Ð°ÑÐµÐ»Ñ (MongoDB)
 app.get("/api/chats", authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId
@@ -737,38 +739,35 @@ app.get("/api/chats", authenticateToken, async (req, res) => {
         }
       })
     )
-
-    // Ð¤Ð¸Ð»ÑÑÑÑÐµÐ¼ ÑÐ°ÑÑ: Ð¾ÑÑÐ°Ð²Ð»ÑÐµÐ¼ ÑÐ¾Ð»ÑÐºÐ¾ ÑÐµ, Ð³Ð´Ðµ ÐµÑÑÑ ÑÐ¾Ð¾Ð±ÑÐµÐ½Ð¸Ñ
-    let filteredChats = chatList.filter(chat => chat.messageCount > 0)
-
-    // ÐÐ¾Ð±Ð°Ð²Ð»ÑÐµÐ¼ Ð³Ð»Ð¾Ð±Ð°Ð»ÑÐ½ÑÐ¹ ÑÐ°Ñ ÑÐ¾Ð»ÑÐºÐ¾ ÐµÑÐ»Ð¸ Ð² Ð½ÐµÐ¼ ÐµÑÑÑ ÑÐ¾Ð¾Ð±ÑÐµÐ½Ð¸Ñ
+    
+    // ÐÑÐµÐ³Ð´Ð° Ð´Ð¾Ð±Ð°Ð²Ð»ÑÐµÐ¼ Ð³Ð»Ð¾Ð±Ð°Ð»ÑÐ½ÑÐ¹ ÑÐ°Ñ Ð² Ð½Ð°ÑÐ°Ð»Ð¾ ÑÐ¿Ð¸ÑÐºÐ°
     const globalChat = await Chat.findById("global").lean();
-    if (globalChat) {
+    if (globalChat && !chatList.some(chat => (chat.id || chat._id) === "global")) {
+      // Получаем последнее сообщение и количество сообщений для глобального чата
       const globalLastMessage = await Message.findOne({ chat: "global" })
         .sort({ timestamp: -1 })
         .lean()
       const globalMessageCount = await Message.countDocuments({ chat: "global" })
-
-      if (globalMessageCount > 0) {
-        filteredChats.unshift({
-          ...globalChat,
-          id: globalChat._id?.toString() || globalChat._id,
-          participants: globalChat.participants || [],
-          lastMessage: globalLastMessage
-            ? {
-                ...globalLastMessage,
-                id: globalLastMessage._id?.toString() || globalLastMessage._id,
-                senderId: globalLastMessage.sender?.toString() || globalLastMessage.sender,
-                chatId: globalLastMessage.chat?.toString() || globalLastMessage.chat,
-              }
-            : null,
-          messageCount: globalMessageCount,
-          unreadCount: 0,
-        });
-      }
+      chatList.unshift({
+        ...globalChat,
+        id: globalChat._id?.toString() || globalChat._id,
+        participants: globalChat.participants || [],
+        lastMessage: globalLastMessage
+          ? {
+              ...globalLastMessage,
+              id: globalLastMessage._id?.toString() || globalLastMessage._id,
+              senderId: globalLastMessage.sender?.toString() || globalLastMessage.sender,
+              chatId: globalLastMessage.chat?.toString() || globalLastMessage.chat,
+            }
+          : null,
+        messageCount: globalMessageCount,
+        unreadCount: 0,
+      });
+      console.log("🌍 Глобальный чат добавлен в список");
     }
-
-    res.json(filteredChats)
+    
+    console.log("ð ÐÑÐ¿ÑÐ°Ð²Ð»ÑÐµÐ¼ ÑÐ¿Ð¸ÑÐ¾Ðº ÑÐ°ÑÐ¾Ð²:", chatList.length, "ÑÐ°ÑÐ¾Ð²");
+    res.json(chatList)
   } catch (error) {
     console.error("/api/chats error:", error)
     res.status(500).json({ error: "ÐÑÐ¸Ð±ÐºÐ° ÑÐµÑÐ²ÐµÑÐ°" })
@@ -885,13 +884,6 @@ io.on("connection", async (socket) => {
   // ÐÑÐ¸ Ð¿Ð¾Ð´ÐºÐ»ÑÑÐµÐ½Ð¸Ð¸ Ð¾Ð±Ð½Ð¾Ð²Ð»ÑÑÑ ÑÑÐ°ÑÑÑ Ð¿Ð¾Ð»ÑÐ·Ð¾Ð²Ð°ÑÐµÐ»Ñ Ð² MongoDB
   await User.findByIdAndUpdate(user.id, { isOnline: true, lastSeen: new Date(), status: "online" })
   userHeartbeats.set(user.id, Date.now())
-  
-  // Ð£Ð²ÐµÐ´Ð¾Ð¼Ð»ÑÐµÐ¼ Ð²ÑÐµÑ Ð¾ Ð¸Ð·Ð¼ÐµÐ½ÐµÐ½Ð¸Ð¸ ÑÑÐ°ÑÑÑÐ° Ð¿Ð¾Ð»ÑÐ·Ð¾Ð²Ð°ÑÐµÐ»Ñ
-  io.emit("user_status_change", { 
-    userId: user.id, 
-    status: "online", 
-    isOnline: true 
-  })
 
       // ÐÑÐ¸ÑÐ¾ÐµÐ´Ð¸Ð½ÑÐµÐ¼ Ð¿Ð¾Ð»ÑÐ·Ð¾Ð²Ð°ÑÐµÐ»Ñ ÐºÐ¾ Ð²ÑÐµÐ¼ ÐµÐ³Ð¾ ÑÐ°ÑÐ°Ð¼ (MongoDB)
     try {
@@ -952,14 +944,12 @@ io.on("connection", async (socket) => {
         
         // ÐÑÐµÐ³Ð´Ð° Ð´Ð¾Ð±Ð°Ð²Ð»ÑÐµÐ¼ Ð³Ð»Ð¾Ð±Ð°Ð»ÑÐ½ÑÐ¹ ÑÐ°Ñ Ð² Ð½Ð°ÑÐ°Ð»Ð¾ ÑÐ¿Ð¸ÑÐºÐ°
         const globalChat = await Chat.findById("global").lean();
-        if (globalChat) {
-          // ÐÐ¾Ð»ÑÑÐ°ÐµÐ¼ Ð¿Ð¾ÑÐ»ÐµÐ´Ð½ÐµÐµ ÑÐ¾Ð¾Ð±ÑÐµÐ½Ð¸Ðµ Ð¸ ÐºÐ¾Ð»Ð¸ÑÐµÑÑÐ²Ð¾ ÑÐ¾Ð¾Ð±ÑÐµÐ½Ð¸Ð¹ Ð´Ð»Ñ Ð³Ð»Ð¾Ð±Ð°Ð»ÑÐ½Ð¾Ð³Ð¾ ÑÐ°ÑÐ°
+        if (globalChat && !chatList.some(chat => (chat.id || chat._id) === "global")) {
+          // Получаем последнее сообщение и количество сообщений для глобального чата
           const globalLastMessage = await Message.findOne({ chat: "global" })
             .sort({ timestamp: -1 })
             .lean()
           const globalMessageCount = await Message.countDocuments({ chat: "global" })
-          
-          // ÐÐ¾Ð±Ð°Ð²Ð»ÑÐµÐ¼ Ð³Ð»Ð¾Ð±Ð°Ð»ÑÐ½ÑÐ¹ ÑÐ°Ñ Ð² Ð½Ð°ÑÐ°Ð»Ð¾ ÑÐ¿Ð¸ÑÐºÐ°
           chatList.unshift({
             ...globalChat,
             id: globalChat._id?.toString() || globalChat._id,
@@ -975,7 +965,7 @@ io.on("connection", async (socket) => {
             messageCount: globalMessageCount,
             unreadCount: 0,
           });
-          console.log("ð ÐÐ»Ð¾Ð±Ð°Ð»ÑÐ½ÑÐ¹ ÑÐ°Ñ Ð´Ð¾Ð±Ð°Ð²Ð»ÐµÐ½ Ð² ÑÐ¿Ð¸ÑÐ¾Ðº");
+          console.log("🌍 Глобальный чат добавлен в список");
         }
         
         socket.emit("my_chats", chatList)
@@ -1113,7 +1103,7 @@ io.on("connection", async (socket) => {
           isPinned: false,
           isMuted: false,
         })
-        console.log(`â Ð§Ð°Ñ ÑÐ¾Ð·Ð´Ð°Ð½: ${chat._id} Ñ ÑÐ¾Ð±ÐµÑÐµÐ´Ð½Ð¸ÐºÐ¾Ð¼: ${otherUserName}`)
+        console.log(`â Ð§Ð°Ñ ÑÐ¾Ð·Ð´Ð°Ð½ Ð°Ð²ÑÐ¾Ð¼Ð°ÑÐ¸ÑÐµÑÐºÐ¸: ${chat._id} Ñ ÑÐ¾Ð±ÐµÑÐµÐ´Ð½Ð¸ÐºÐ¾Ð¼: ${otherUserName}`)
       } else {
         console.log(`ð Ð§Ð°Ñ ÑÐ¶Ðµ ÑÑÑÐµÑÑÐ²ÑÐµÑ: ${chat._id}`)
       }
@@ -1201,12 +1191,46 @@ io.on("connection", async (socket) => {
     try {
       console.log(`ð¤ ÐÐ¾Ð¿ÑÑÐºÐ° Ð¾ÑÐ¿ÑÐ°Ð²ÐºÐ¸ ÑÐ¾Ð¾Ð±ÑÐµÐ½Ð¸Ñ: ${user.username} -> ${messageData.chatId}`)
       console.log(`ð¤ ÐÐ°Ð½Ð½ÑÐµ ÑÐ¾Ð¾Ð±ÑÐµÐ½Ð¸Ñ:`, messageData)
-  
+    
       let chat = await Chat.findById(messageData.chatId)
       if (!chat) {
         console.log(`â Ð§Ð°Ñ Ð½Ðµ Ð½Ð°Ð¹Ð´ÐµÐ½: ${messageData.chatId}`)
-        socket.emit("error", { message: "Ð§Ð°Ñ Ð½Ðµ Ð½Ð°Ð¹Ð´ÐµÐ½. Ð¡Ð¾Ð¾Ð±ÑÐµÐ½Ð¸Ðµ Ð½Ðµ Ð¾ÑÐ¿ÑÐ°Ð²Ð»ÐµÐ½Ð¾." })
-        return
+        
+        // ÐÐ¾Ð¿ÑÐ¾Ð±ÑÐµÐ¼ ÑÐ¾Ð·Ð´Ð°ÑÑ ÑÐ°Ñ, ÐµÑÐ»Ð¸ Ð¾Ð½ Ð½Ðµ ÑÑÑÐµÑÑÐ²ÑÐµÑ
+        if (messageData.chatId.startsWith('private_')) {
+          const participantIds = messageData.chatId.replace('private_', '').split('_')
+          if (participantIds.length >= 2) {
+            console.log(`ð ÐÐ¾Ð¿ÑÑÐºÐ° ÑÐ¾Ð·Ð´Ð°Ð½Ð¸Ñ ÑÐ°ÑÐ°: ${messageData.chatId}`)
+            
+            // ÐÐ°Ð¹ÑÐ¸ ÑÐ¾Ð±ÐµÑÐµÐ´Ð½Ð¸ÐºÐ° (Ð½Ðµ ÑÐµÐºÑÑÐµÐ³Ð¾ Ð¿Ð¾Ð»ÑÐ·Ð¾Ð²Ð°ÑÐµÐ»Ñ)
+            const otherUserId = participantIds.find(id => id !== user.id)
+            const otherUser = otherUserId ? await User.findById(otherUserId).lean() : null
+            const otherUserName = otherUser ? otherUser.username : "ÐÐµÐ¸Ð·Ð²ÐµÑÑÐ½Ð¾"
+            
+            chat = await Chat.create({
+              _id: messageData.chatId,
+              name: otherUserName, // ÐÑÐ¿Ð¾Ð»ÑÐ·ÑÐµÐ¼ Ð¸Ð¼Ñ ÑÐ¾Ð±ÐµÑÐµÐ´Ð½Ð¸ÐºÐ°
+              avatar: otherUser?.avatar || null,
+              description: `ÐÑÐ¸Ð²Ð°ÑÐ½ÑÐ¹ ÑÐ°Ñ Ñ ${otherUserName}`,
+              isGroup: false,
+              participants: participantIds,
+              createdAt: new Date(),
+              type: "private",
+              isEncrypted: true,
+              createdBy: user.id,
+              theme: "default",
+              isPinned: false,
+              isMuted: false,
+            })
+            console.log(`â Ð§Ð°Ñ ÑÐ¾Ð·Ð´Ð°Ð½ Ð°Ð²ÑÐ¾Ð¼Ð°ÑÐ¸ÑÐµÑÐºÐ¸: ${chat._id} Ñ ÑÐ¾Ð±ÐµÑÐµÐ´Ð½Ð¸ÐºÐ¾Ð¼: ${otherUserName}`)
+          }
+        }
+        
+        if (!chat) {
+          console.log(`â ÐÐµ ÑÐ´Ð°Ð»Ð¾ÑÑ ÑÐ¾Ð·Ð´Ð°ÑÑ ÑÐ°Ñ: ${messageData.chatId}`)
+          socket.emit("error", { message: "Ð§Ð°Ñ Ð½Ðµ Ð½Ð°Ð¹Ð´ÐµÐ½ Ð¸ Ð½Ðµ Ð¼Ð¾Ð¶ÐµÑ Ð±ÑÑÑ ÑÐ¾Ð·Ð´Ð°Ð½" })
+          return
+        }
       }
       
       console.log(`ð Ð£ÑÐ°ÑÑÐ½Ð¸ÐºÐ¸ ÑÐ°ÑÐ°:`, chat.participants)
@@ -1536,13 +1560,6 @@ io.on("connection", async (socket) => {
     userHeartbeats.delete(user.id)
     globalChatOnline.delete(socket.id);
     io.to('global').emit('global_online_count', globalChatOnline.size);
-    
-    // Ð£Ð²ÐµÐ´Ð¾Ð¼Ð»ÑÐµÐ¼ Ð²ÑÐµÑ Ð¾ Ð¸Ð·Ð¼ÐµÐ½ÐµÐ½Ð¸Ð¸ ÑÑÐ°ÑÑÑÐ° Ð¿Ð¾Ð»ÑÐ·Ð¾Ð²Ð°ÑÐµÐ»Ñ
-    io.emit("user_status_change", { 
-      userId: user.id, 
-      status: "offline", 
-      isOnline: false 
-    })
     // ÐÐ±Ð½Ð¾Ð²Ð»ÑÐµÐ¼ ÑÐ¿Ð¸ÑÐ¾Ðº Ð°ÐºÑÐ¸Ð²Ð½ÑÑ Ð¿Ð¾Ð»ÑÐ·Ð¾Ð²Ð°ÑÐµÐ»ÐµÐ¹
     const activeUsers = await User.find({ isOnline: true }).lean()
     io.emit("users_update", activeUsers.map((u) => ({
@@ -1558,53 +1575,60 @@ io.on("connection", async (socket) => {
     console.log(`ð ÐÑÐºÐ»ÑÑÐµÐ½Ð¸Ðµ: ${user.username}`)
   })
 
-  // â ÐÐ¾ÑÑÐ°Ð²Ð»ÐµÐ½Ð¾
-  socket.on("message_delivered", async ({ messageId, userId }) => {
+  // Удаление сообщения (только автор может удалить своё сообщение)
+  socket.on("delete_message", async (data) => {
     try {
-      await Message.findByIdAndUpdate(messageId, { $addToSet: { deliveredTo: userId } });
-      const msg = await Message.findById(messageId);
-      if (msg) io.to(msg.chat).emit("message_status_update", { messageId, deliveredTo: userId });
-    } catch (error) {
-      console.error("message_delivered error:", error);
-    }
-  });
-
-  // ââ ÐÑÐ¾ÑÐ¸ÑÐ°Ð½Ð¾
-  socket.on("message_read", async ({ messageId, userId }) => {
-    try {
-      await Message.findByIdAndUpdate(messageId, { $addToSet: { readBy: userId } });
-      const msg = await Message.findById(messageId);
-      if (msg) io.to(msg.chat).emit("message_status_update", { messageId, readBy: userId });
-    } catch (error) {
-      console.error("message_read error:", error);
-    }
-  });
-
-  // --- Typing indicator ---
-  socket.on("typing_start", ({ chatId, userId, username }) => {
-    socket.to(chatId).emit("user_typing", { chatId, userId, username });
-  });
-  socket.on("typing_stop", ({ chatId, userId }) => {
-    socket.to(chatId).emit("user_stop_typing", { chatId, userId });
-  });
-
-  // --- Ð ÐµÐ´Ð°ÐºÑÐ¸ÑÐ¾Ð²Ð°Ð½Ð¸Ðµ ÑÐ¾Ð¾Ð±ÑÐµÐ½Ð¸Ñ ---
-  socket.on("edit_message", async ({ messageId, newContent }) => {
-    try {
-      const msg = await Message.findByIdAndUpdate(messageId, { content: newContent, isEdited: true }, { new: true });
-      if (msg) io.to(msg.chat).emit("message_edited", msg);
-    } catch (error) {
-      console.error("edit_message error:", error);
-    }
-  });
-
-  // --- Ð£Ð´Ð°Ð»ÐµÐ½Ð¸Ðµ ÑÐ¾Ð¾Ð±ÑÐµÐ½Ð¸Ñ ---
-  socket.on("delete_message", async ({ messageId }) => {
-    try {
-      const msg = await Message.findByIdAndDelete(messageId);
-      if (msg) io.to(msg.chat).emit("message_deleted", messageId);
+      const { messageId } = data;
+      const message = await Message.findById(messageId);
+      if (!message) {
+        socket.emit("error", { message: "Сообщение не найдено" });
+        return;
+      }
+      // Только автор сообщения может удалить его
+      if (message.sender.toString() !== user.id) {
+        socket.emit("error", { message: "Вы не можете удалить это сообщение" });
+        return;
+      }
+      await Message.findByIdAndDelete(messageId);
+      io.to(message.chat.toString()).emit("message_deleted", messageId);
     } catch (error) {
       console.error("delete_message error:", error);
+      socket.emit("error", { message: "Ошибка удаления сообщения" });
+    }
+  });
+
+  // Редактирование сообщения (только автор может редактировать своё сообщение)
+  socket.on("edit_message", async (data) => {
+    try {
+      const { messageId, newContent, isEncrypted } = data;
+      const message = await Message.findById(messageId);
+      if (!message) {
+        socket.emit("error", { message: "Сообщение не найдено" });
+        return;
+      }
+      // Только автор сообщения может редактировать его
+      if (message.sender.toString() !== user.id) {
+        socket.emit("error", { message: "Вы не можете редактировать это сообщение" });
+        return;
+      }
+      message.content = newContent;
+      message.isEncrypted = !!isEncrypted;
+      message.isEdited = true;
+      await message.save();
+      // Для совместимости с клиентом отправим обновлённое сообщение
+      const msgObj = {
+        ...message.toObject(),
+        id: message._id?.toString() || message._id,
+        senderId: user.id,
+        senderName: user.username,
+        chatId: message.chat?.toString() || message.chat,
+        content: newContent,
+        isEdited: true,
+      };
+      io.to(message.chat.toString()).emit("message_edited", msgObj);
+    } catch (error) {
+      console.error("edit_message error:", error);
+      socket.emit("error", { message: "Ошибка редактирования сообщения" });
     }
   });
 })
@@ -1666,23 +1690,39 @@ setInterval(cleanupInactiveUsers, 30000)
 
 // ÐÐ°Ð¿ÑÑÐº ÑÐµÑÐ²ÐµÑÐ°
 server.listen(PORT, async () => {
-  // ÐÑÐ¾Ð²ÐµÑÑÐµÐ¼ ÐºÐ¾Ð»Ð¸ÑÐµÑÑÐ²Ð¾ ÑÐ¾Ð¾Ð±ÑÐµÐ½Ð¸Ð¹ Ð² Ð³Ð»Ð¾Ð±Ð°Ð»ÑÐ½Ð¾Ð¼ ÑÐ°ÑÐµ
+  // ÐÑÐ¸ÑÐ°ÐµÐ¼ Ð³Ð»Ð¾Ð±Ð°Ð»ÑÐ½ÑÐ¹ ÑÐ°Ñ Ð¿ÑÐ¸ Ð·Ð°Ð¿ÑÑÐºÐµ
   try {
-    const messageCount = await Message.countDocuments({ chat: 'global' });
-    console.log(`ð Ð Ð³Ð»Ð¾Ð±Ð°Ð»ÑÐ½Ð¾Ð¼ ÑÐ°ÑÐµ ${messageCount} ÑÐ¾Ð¾Ð±ÑÐµÐ½Ð¸Ð¹`);
+    await Message.deleteMany({ chat: 'global' });
+    console.log('ð ÐÐ»Ð¾Ð±Ð°Ð»ÑÐ½ÑÐ¹ ÑÐ°Ñ Ð¾ÑÐ¸ÑÐµÐ½ Ð¿ÑÐ¸ Ð·Ð°Ð¿ÑÑÐºÐµ ÑÐµÑÐ²ÐµÑÐ°');
   } catch (error) {
-    console.error('ÐÑÐ¸Ð±ÐºÐ° Ð¿ÑÐ¾Ð²ÐµÑÐºÐ¸ Ð³Ð»Ð¾Ð±Ð°Ð»ÑÐ½Ð¾Ð³Ð¾ ÑÐ°ÑÐ°:', error);
+    console.error('ÐÑÐ¸Ð±ÐºÐ° Ð¾ÑÐ¸ÑÑÐºÐ¸ Ð³Ð»Ð¾Ð±Ð°Ð»ÑÐ½Ð¾Ð³Ð¾ ÑÐ°ÑÐ°:', error);
   }
   
   console.log(`
-ð ACTOGRAM Server v3.0 Ð·Ð°Ð¿ÑÑÐµÐ½ Ð½Ð° Ð¿Ð¾ÑÑÑ ${PORT}
-ð± ÐÐ»Ð¸ÐµÐ½Ñ: https://acto-uimuz.vercel.app  
-ð Ð¡ÐµÑÐ²ÐµÑ: https://actogr.onrender.com
-ð ÐÐµÐ·Ð¾Ð¿Ð°ÑÐ½Ð¾ÑÑÑ: JWT + Bcrypt + Rate Limiting + E2E Encryption
-â¨ ÐÐ¾Ð²ÑÐµ ÑÑÐ½ÐºÑÐ¸Ð¸: Ð ÐµÐ°ÐºÑÐ¸Ð¸, ÑÐ»ÑÑÑÐµÐ½Ð½ÑÐ¹ UI, Ð¼Ð½Ð¾Ð³Ð¾ÑÐ·ÑÑÐ½Ð¾ÑÑÑ
-ð¡ï¸ Ð¡ÑÐ°ÑÑÑ: ÐÐ¾Ð»Ð½Ð¾ÑÑÑÑ Ð·Ð°ÑÐ¸ÑÐµÐ½ Ð¸ Ð³Ð¾ÑÐ¾Ð² Ðº ÑÐ°Ð±Ð¾ÑÐµ
+🚀 ACTOGRAM Server v3.0 запущен на порту ${PORT}
+📱 Клиент: https://acto-uimuz.vercel.app  
+🌐 Сервер: https://actogr.onrender.com
+🔐 Безопасность: JWT + Bcrypt + Rate Limiting + E2E Encryption
+✨ Новые функции: Реакции, улучшенный UI, многоязычность
+🛡️ Статус: Полностью защищён и готов к работе
   `)
 })
+
+// Автоочистка общего чата раз в неделю (воскресенье в 4:00 утра)
+let lastGlobalChatCleanupDay = null;
+setInterval(async () => {
+  const now = new Date();
+  // Воскресенье (0) и 4:00 утра
+  if (now.getDay() === 0 && now.getHours() === 4 && now.getMinutes() === 0) {
+    const today = now.toISOString().slice(0, 10);
+    if (lastGlobalChatCleanupDay !== today) {
+      await Message.deleteMany({ chat: 'global' });
+      io.to('global').emit('chat_cleared', { chatId: 'global' });
+      lastGlobalChatCleanupDay = today;
+      console.log('🌍 Общий чат автоматически очищен в воскресенье в 4:00 утра');
+    }
+  }
+}, 60 * 1000);
 
 // Graceful shutdown
 process.on("SIGTERM", () => {
@@ -1787,7 +1827,7 @@ const ChatSchema = new Schema({
 
 const MessageSchema = new Schema({
   sender: { type: Schema.Types.ObjectId, ref: "User" },
-  chat: { type: String, required: true },
+  chat: { type: String, required: true }, // ÐÐ·Ð¼ÐµÐ½ÐµÐ½Ð¾ Ñ ObjectId Ð½Ð° String
   content: String,
   timestamp: { type: Date, default: Date.now },
   type: String,
@@ -1797,7 +1837,6 @@ const MessageSchema = new Schema({
   isEncrypted: Boolean,
   replyTo: { type: Schema.Types.ObjectId, ref: "Message" },
   reactions: [{ emoji: String, userId: String, username: String }],
-  deliveredTo: [String], // <--- Ð´Ð¾Ð±Ð°Ð²Ð»ÐµÐ½Ð¾ Ð´Ð»Ñ ÑÑÐ°ÑÑÑÐ° Ð´Ð¾ÑÑÐ°Ð²ÐºÐ¸
   readBy: [String],
   isEdited: Boolean,
 });
@@ -1892,57 +1931,17 @@ app.post("/api/clear-global-chat", authenticateToken, async (req, res) => {
   }
 })
 
-// Endpoint Ð´Ð»Ñ Ð¿Ð¾Ð»ÑÑÐµÐ½Ð¸Ñ ÑÑÐ°ÑÑÑÐ¾Ð² Ð¿Ð¾Ð»ÑÐ·Ð¾Ð²Ð°ÑÐµÐ»ÐµÐ¹
-app.get("/api/users/status", authenticateToken, async (req, res) => {
-  try {
-    const users = await User.find({}, "_id username fullName avatar isOnline lastSeen status").lean()
-    const usersWithIds = users.map(user => ({
-      ...user,
-      id: user._id.toString()
-    }))
-    res.json(usersWithIds)
-  } catch (error) {
-    console.error("users/status error:", error)
-    res.status(500).json({ error: "ÐÑÐ¸Ð±ÐºÐ° Ð¿Ð¾Ð»ÑÑÐµÐ½Ð¸Ñ ÑÑÐ°ÑÑÑÐ¾Ð² Ð¿Ð¾Ð»ÑÐ·Ð¾Ð²Ð°ÑÐµÐ»ÐµÐ¹" })
-  }
-})
-
 // Endpoint Ð´Ð»Ñ Ð·Ð°Ð³ÑÑÐ·ÐºÐ¸ Ð¸Ð·Ð¾Ð±ÑÐ°Ð¶ÐµÐ½Ð¸Ñ Ð² ÑÐ°Ñ
-app.post("/api/upload-image", authenticateToken, (req, res, next) => {
-  upload.single("image")(req, res, (err) => {
-    if (err) {
-      console.error("â Multer error:", err)
-      if (err.code === 'LIMIT_FILE_SIZE') {
-        return res.status(400).json({ error: "Ð¤Ð°Ð¹Ð» ÑÐ»Ð¸ÑÐºÐ¾Ð¼ Ð±Ð¾Ð»ÑÑÐ¾Ð¹ (Ð¼Ð°ÐºÑÐ¸Ð¼ÑÐ¼ 10MB)" })
-      }
-      if (err.message.includes("Ð¢Ð¾Ð»ÑÐºÐ¾ Ð¸Ð·Ð¾Ð±ÑÐ°Ð¶ÐµÐ½Ð¸Ñ")) {
-        return res.status(400).json({ error: err.message })
-      }
-      return res.status(500).json({ error: "ÐÑÐ¸Ð±ÐºÐ° Ð·Ð°Ð³ÑÑÐ·ÐºÐ¸ ÑÐ°Ð¹Ð»Ð°" })
-    }
-    next()
-  })
-}, async (req, res) => {
+app.post("/api/upload-image", authenticateToken, upload.single("image"), async (req, res) => {
   try {
-    console.log("ð· ÐÐ°Ð¿ÑÐ¾Ñ Ð½Ð° Ð·Ð°Ð³ÑÑÐ·ÐºÑ Ð¸Ð·Ð¾Ð±ÑÐ°Ð¶ÐµÐ½Ð¸Ñ")
-    console.log("ð· Ð¤Ð°Ð¹Ð»:", req.file ? {
-      filename: req.file.filename,
-      originalname: req.file.originalname,
-      mimetype: req.file.mimetype,
-      size: req.file.size
-    } : "ÐÐµÑ ÑÐ°Ð¹Ð»Ð°")
+    console.log("ð· ÐÐ°Ð¿ÑÐ¾Ñ Ð½Ð° Ð·Ð°Ð³ÑÑÐ·ÐºÑ Ð¸Ð·Ð¾Ð±ÑÐ°Ð¶ÐµÐ½Ð¸Ñ (Ð»Ð¾ÐºÐ°Ð»ÑÐ½Ð¾)")
+    console.log("ð· Ð¤Ð°Ð¹Ð»:", req.file)
     console.log("ð· Body:", req.body)
     console.log("ð· User:", req.user)
     
     if (!req.file) {
-      console.log("â Ð¤Ð°Ð¹Ð» Ð½Ðµ Ð·Ð°Ð³ÑÑÐ¶ÐµÐ½")
-      return res.status(400).json({ error: "Ð¤Ð°Ð¹Ð» Ð½Ðµ Ð·Ð°Ð³ÑÑÐ¶ÐµÐ½" })
-    }
-    
-    // ÐÑÐ¾Ð²ÐµÑÑÐµÐ¼ ÑÐ°Ð·Ð¼ÐµÑ ÑÐ°Ð¹Ð»Ð°
-    if (req.file.size > 10 * 1024 * 1024) {
-      console.log("â Ð¤Ð°Ð¹Ð» ÑÐ»Ð¸ÑÐºÐ¾Ð¼ Ð±Ð¾Ð»ÑÑÐ¾Ð¹:", req.file.size)
-      return res.status(400).json({ error: "Ð¤Ð°Ð¹Ð» ÑÐ»Ð¸ÑÐºÐ¾Ð¼ Ð±Ð¾Ð»ÑÑÐ¾Ð¹ (Ð¼Ð°ÐºÑÐ¸Ð¼ÑÐ¼ 10MB)" })
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      return res.status(400).json({ error: "Файл не загружен" })
     }
     
     const userId = req.user.userId
@@ -1951,28 +1950,27 @@ app.post("/api/upload-image", authenticateToken, (req, res, next) => {
     console.log("ð· ÐÐ°Ð½Ð½ÑÐµ:", { userId, chatId })
     
     if (!chatId) {
-      console.log("â chatId Ð¾ÑÑÑÑÑÑÐ²ÑÐµÑ")
-      return res.status(400).json({ error: "chatId Ð¾Ð±ÑÐ·Ð°ÑÐµÐ»ÐµÐ½" })
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      return res.status(400).json({ error: "chatId обязателен" })
     }
     
     // ÐÑÐ¾Ð²ÐµÑÑÐµÐ¼, ÑÑÐ¾ Ð¿Ð¾Ð»ÑÐ·Ð¾Ð²Ð°ÑÐµÐ»Ñ ÑÐ²Ð»ÑÐµÑÑÑ ÑÑÐ°ÑÑÐ½Ð¸ÐºÐ¾Ð¼ ÑÐ°ÑÐ°
     const chat = await Chat.findById(chatId)
     if (!chat) {
-      console.log("â Ð§Ð°Ñ Ð½Ðµ Ð½Ð°Ð¹Ð´ÐµÐ½:", chatId)
-      return res.status(404).json({ error: "Ð§Ð°Ñ Ð½Ðµ Ð½Ð°Ð¹Ð´ÐµÐ½" })
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      return res.status(404).json({ error: "Чат не найден" })
     }
     
     const isGlobalChat = chatId === "global"
     const isParticipant = isGlobalChat || chat.participants.some(p => p && p.toString() === userId)
     if (!isParticipant) {
-      console.log("â ÐÐ¾Ð»ÑÐ·Ð¾Ð²Ð°ÑÐµÐ»Ñ Ð½Ðµ ÑÐ²Ð»ÑÐµÑÑÑ ÑÑÐ°ÑÑÐ½Ð¸ÐºÐ¾Ð¼ ÑÐ°ÑÐ°")
-      return res.status(403).json({ error: "ÐÐµÑ Ð´Ð¾ÑÑÑÐ¿Ð° Ðº ÑÑÐ¾Ð¼Ñ ÑÐ°ÑÑ" })
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      return res.status(403).json({ error: "Нет доступа к этому чату" })
     }
     
     const imageUrl = `/avatars/${req.file.filename}`
-    console.log("ð· URL Ð¸Ð·Ð¾Ð±ÑÐ°Ð¶ÐµÐ½Ð¸Ñ:", imageUrl)
     
-    // Ð¡Ð¾Ð·Ð´Ð°ÐµÐ¼ ÑÐ¾Ð¾Ð±ÑÐµÐ½Ð¸Ðµ Ñ Ð¸Ð·Ð¾Ð±ÑÐ°Ð¶ÐµÐ½Ð¸ÐµÐ¼
+    // Ð¡Ð¾Ð·Ð´Ð°ÑÑ ÑÐ¾Ð¾Ð±ÑÐµÐ½Ð¸Ðµ Ñ Ð¸Ð·Ð¾Ð±ÑÐ°Ð¶ÐµÐ½Ð¸ÐµÐ¼
     const message = await Message.create({
       sender: userId,
       chat: chatId,
@@ -1984,12 +1982,9 @@ app.post("/api/upload-image", authenticateToken, (req, res, next) => {
       fileSize: req.file.size,
       isEncrypted: false,
       reactions: [],
-      deliveredTo: [],
       readBy: [userId],
       isEdited: false,
     })
-    
-    console.log("ð· Ð¡Ð¾Ð¾Ð±ÑÐµÐ½Ð¸Ðµ ÑÐ¾Ð·Ð´Ð°Ð½Ð¾ Ð² ÐÐ:", message._id)
     
     // ÐÐ¾Ð»ÑÑÐ°ÐµÐ¼ Ð¸Ð½ÑÐ¾ÑÐ¼Ð°ÑÐ¸Ñ Ð¾ Ð¿Ð¾Ð»ÑÐ·Ð¾Ð²Ð°ÑÐµÐ»Ðµ
     const user = await User.findById(userId).lean()
@@ -2006,8 +2001,6 @@ app.post("/api/upload-image", authenticateToken, (req, res, next) => {
       fileSize: req.file.size,
     }
     
-    console.log("ð· ÐÑÐ¿ÑÐ°Ð²Ð»ÑÐµÐ¼ ÑÐ¾Ð¾Ð±ÑÐµÐ½Ð¸Ðµ Ð² ÑÐ°Ñ:", chatId)
-    
     // ÐÑÐ¿ÑÐ°Ð²Ð»ÑÐµÐ¼ ÑÐ¾Ð¾Ð±ÑÐµÐ½Ð¸Ðµ Ð²ÑÐµÐ¼ ÑÑÐ°ÑÑÐ½Ð¸ÐºÐ°Ð¼ ÑÐ°ÑÐ°
     io.to(chatId).emit("new_message", msgObj)
     
@@ -2017,81 +2010,10 @@ app.post("/api/upload-image", authenticateToken, (req, res, next) => {
       imageUrl: imageUrl 
     })
     
-    console.log(`â ÐÐ·Ð¾Ð±ÑÐ°Ð¶ÐµÐ½Ð¸Ðµ Ð·Ð°Ð³ÑÑÐ¶ÐµÐ½Ð¾ ÑÑÐ¿ÐµÑÐ½Ð¾: ${user.username} -> ${chatId}`)
+    console.log(`ð· ÐÐ·Ð¾Ð±ÑÐ°Ð¶ÐµÐ½Ð¸Ðµ Ð·Ð°Ð³ÑÑÐ¶ÐµÐ½Ð¾ (Ð»Ð¾ÐºÐ°Ð»ÑÐ½Ð¾): ${user.username} -> ${chatId}`)
   } catch (error) {
-    console.error("â upload-image error:", error)
-    res.status(500).json({ error: "ÐÑÐ¸Ð±ÐºÐ° Ð·Ð°Ð³ÑÑÐ·ÐºÐ¸ Ð¸Ð·Ð¾Ð±ÑÐ°Ð¶ÐµÐ½Ð¸Ñ: " + error.message })
+    console.error("upload-image error:", error)
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.status(500).json({ error: "Ошибка загрузки изображения" })
   }
 })
-
-// --- ADMIN MIDDLEWARE ---
-function requireAdmin(req, res, next) {
-  // req.user Ð¼Ð¾Ð¶ÐµÑ Ð±ÑÑÑ ÑÐ¾Ð»ÑÐºÐ¾ userId, username, email Ð¸Ð· JWT, Ð¿Ð¾ÑÑÐ¾Ð¼Ñ Ð½ÑÐ¶Ð½Ð¾ Ð¿Ð¾Ð»ÑÑÐ¸ÑÑ Ð¿Ð¾Ð»ÑÐ·Ð¾Ð²Ð°ÑÐµÐ»Ñ Ð¸Ð· ÐÐ
-  User.findById(req.user.userId).then(user => {
-    if (!user) return res.status(401).json({ error: 'ÐÐ¾Ð»ÑÐ·Ð¾Ð²Ð°ÑÐµÐ»Ñ Ð½Ðµ Ð½Ð°Ð¹Ð´ÐµÐ½' });
-    if (user.role !== 'admin') return res.status(403).json({ error: 'Ð¢ÑÐµÐ±ÑÐµÑÑÑ ÑÐ¾Ð»Ñ Ð°Ð´Ð¼Ð¸Ð½Ð¸ÑÑÑÐ°ÑÐ¾ÑÐ°' });
-    req.user = user; // Ð¾Ð±Ð½Ð¾Ð²Ð»ÑÐµÐ¼ req.user Ð½Ð° Ð¿Ð¾Ð»Ð½ÑÐ¹ Ð¾Ð±ÑÐµÐºÑ
-    next();
-  }).catch(err => {
-    res.status(500).json({ error: 'ÐÑÐ¸Ð±ÐºÐ° Ð¿ÑÐ¾Ð²ÐµÑÐºÐ¸ ÑÐ¾Ð»Ð¸ Ð°Ð´Ð¼Ð¸Ð½Ð¸ÑÑÑÐ°ÑÐ¾ÑÐ°' });
-  });
-}
-
-// --- CORS ---
-app.use(cors({
-  origin: true,
-  credentials: true,
-}));
-
-// --- ADMIN ROUTES ---
-// ÐÐ¾Ð»ÑÑÐ¸ÑÑ Ð²ÑÐµÑ Ð¿Ð¾Ð»ÑÐ·Ð¾Ð²Ð°ÑÐµÐ»ÐµÐ¹ (Ð±ÐµÐ· Ð¿Ð°ÑÐ¾Ð»Ñ)
-app.get('/admin/users', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const users = await User.find({}, '-password');
-    res.json({ users });
-  } catch (err) {
-    res.status(500).json({ error: 'ÐÑÐ¸Ð±ÐºÐ° Ð¿Ð¾Ð»ÑÑÐµÐ½Ð¸Ñ Ð¿Ð¾Ð»ÑÐ·Ð¾Ð²Ð°ÑÐµÐ»ÐµÐ¹' });
-  }
-});
-
-// ÐÐ¾Ð»ÑÑÐ¸ÑÑ Ð²ÑÐµ ÑÐ¾Ð¾Ð±ÑÐµÐ½Ð¸Ñ
-app.get('/admin/messages', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const messages = await Message.find({});
-    res.json({ messages });
-  } catch (err) {
-    res.status(500).json({ error: 'ÐÑÐ¸Ð±ÐºÐ° Ð¿Ð¾Ð»ÑÑÐµÐ½Ð¸Ñ ÑÐ¾Ð¾Ð±ÑÐµÐ½Ð¸Ð¹' });
-  }
-});
-
-// ÐÐ°Ð±Ð°Ð½Ð¸ÑÑ Ð¿Ð¾Ð»ÑÐ·Ð¾Ð²Ð°ÑÐµÐ»Ñ
-app.post('/admin/ban/:userId', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const user = await User.findByIdAndUpdate(userId, { status: 'banned' }, { new: true });
-    if (!user) return res.status(404).json({ error: 'ÐÐ¾Ð»ÑÐ·Ð¾Ð²Ð°ÑÐµÐ»Ñ Ð½Ðµ Ð½Ð°Ð¹Ð´ÐµÐ½' });
-    res.json({ success: true, user });
-  } catch (err) {
-    res.status(500).json({ error: 'ÐÑÐ¸Ð±ÐºÐ° Ð±Ð°Ð½Ð° Ð¿Ð¾Ð»ÑÐ·Ð¾Ð²Ð°ÑÐµÐ»Ñ' });
-  }
-});
-
-// ÐÐ¾Ð»ÑÑÐ¸ÑÑ ÑÑÐ°ÑÐ¸ÑÑÐ¸ÐºÑ
-app.get('/admin/stats', authenticateToken, requireAdmin, async (req, res) => {
-  try {
-    const users = await User.countDocuments();
-    const banned = await User.countDocuments({ status: 'banned' });
-    const messagesToday = await Message.countDocuments({
-      timestamp: { $gte: new Date(new Date().setHours(0,0,0,0)) }
-    });
-    const active = await User.countDocuments({ isOnline: true });
-    res.json({ users, active, messagesToday, banned });
-  } catch (err) {
-    res.status(500).json({ error: 'ÐÑÐ¸Ð±ÐºÐ° Ð¿Ð¾Ð»ÑÑÐµÐ½Ð¸Ñ ÑÑÐ°ÑÐ¸ÑÑÐ¸ÐºÐ¸' });
-  }
-});
-
-// --- ÐÐÐÐÐÐÐ¯ÐÐ ROLE Ð UserSchema, ÐµÑÐ»Ð¸ Ð½ÐµÑ ---
-if (!UserSchema.paths.role) {
-  UserSchema.add({ role: { type: String, enum: ['user', 'admin'], default: 'user' } });
-}
