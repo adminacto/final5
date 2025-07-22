@@ -2038,7 +2038,6 @@ function requireAdmin(req, res, next) {
 }
 
 // --- CORS ---
-const cors = require('cors');
 app.use(cors({
   origin: true,
   credentials: true,
