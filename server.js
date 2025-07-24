@@ -68,13 +68,10 @@ const storage = multer.diskStorage({
 });
 const upload = multer({
   storage,
-  limits: { fileSize: 2 * 1024 * 1024 }, // 2MB
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
   fileFilter: (req, file, cb) => {
-    if (["image/jpeg", "image/png", "image/webp"].includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error("Только изображения (jpg, png, webp)"));
-    }
+    // Разрешаем любые файлы (можно добавить фильтр по типу, если нужно)
+    cb(null, true)
   },
 });
 
@@ -1849,9 +1846,8 @@ io.on("connection", async (socket) => {
 // Функция очистки неактивных пользователей
 const cleanupInactiveUsers = async () => {
   try {
-    const now = Date.now();
-    const inactiveThreshold = 30000; // 30 секунд без активности
-
+    const now = Date.now()
+    const inactiveThreshold = 10 * 60 * 1000 // 10 минут без активности
     for (const [userId, lastHeartbeat] of userHeartbeats.entries()) {
       if (now - lastHeartbeat > inactiveThreshold) {
         // Пользователь неактивен, обновляем статус
@@ -1859,15 +1855,14 @@ const cleanupInactiveUsers = async () => {
           isOnline: false,
           lastSeen: new Date(),
           status: "offline",
-        });
-        userHeartbeats.delete(userId);
-        activeConnections.delete(userId);
+        })
+        userHeartbeats.delete(userId)
+        activeConnections.delete(userId)
         console.log(
           `🔌 Автоматическое отключение неактивного пользователя: ${userId}`
-        );
+        )
       }
     }
-
     // Обновляем список активных пользователей
     const activeUsers = await User.find({ isOnline: true }).lean();
     io.emit(
@@ -1884,9 +1879,10 @@ const cleanupInactiveUsers = async () => {
       }))
     );
   } catch (error) {
-    console.error("cleanupInactiveUsers error:", error);
+    console.error("cleanupInactiveUsers error:", error)
   }
-};
+}
+setInterval(cleanupInactiveUsers, 30000)
 
 // Запускаем очистку каждые 30 секунд
 setInterval(cleanupInactiveUsers, 30000);
@@ -2254,3 +2250,16 @@ app.post(
     }
   }
 );
+
+// Обработка ошибок multer (например, превышен размер файла)
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ error: 'Файл слишком большой. Максимальный размер — 10 МБ.' })
+    }
+    return res.status(400).json({ error: 'Ошибка загрузки файла: ' + err.message })
+  } else if (err) {
+    return res.status(500).json({ error: 'Ошибка сервера: ' + err.message })
+  }
+  next()
+})
