@@ -1859,6 +1859,55 @@ io.on("connection", async (socket) => {
       socket.emit("error", { message: "                               " });
     }
   });
+
+  // Отметка сообщений как прочитанных
+  socket.on("read_messages", async (chatId) => {
+    try {
+      if (!chatId) return;
+      // Обновить все сообщения в чате, где readBy не содержит user.id
+      await Message.updateMany(
+        { chat: chatId, readBy: { $ne: user.id } },
+        { $addToSet: { readBy: user.id } }
+      );
+      // После отметки отправить обновлённый список чатов (для обновления unreadCount)
+      const chats = await Chat.find({ participants: user.id })
+        .populate(
+          "participants",
+          "_id username fullName avatar isOnline isVerified status"
+        )
+        .lean();
+      const chatList = await Promise.all(
+        chats.map(async (chat) => {
+          const lastMessage = await Message.findOne({ chat: chat._id })
+            .sort({ timestamp: -1 })
+            .lean();
+          const messageCount = await Message.countDocuments({ chat: chat._id });
+          const unreadCount = await Message.countDocuments({
+            chat: chat._id,
+            readBy: { $ne: user.id }
+          });
+          return {
+            ...chat,
+            id: chat._id?.toString() || chat._id,
+            participants: chat.participants.filter((p) => p !== null),
+            lastMessage: lastMessage
+              ? {
+                  ...lastMessage,
+                  id: lastMessage._id?.toString() || lastMessage._id,
+                  senderId: lastMessage.sender?.toString() || lastMessage.sender,
+                  chatId: lastMessage.chat?.toString() || lastMessage.chat,
+                }
+              : null,
+            messageCount,
+            unreadCount,
+          };
+        })
+      );
+      socket.emit("my_chats", chatList);
+    } catch (error) {
+      console.error("read_messages error:", error);
+    }
+  });
 });
 
 // Функция очистки неактивных пользователей
