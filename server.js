@@ -781,6 +781,11 @@ app.get("/api/chats", authenticateToken, async (req, res) => {
           .sort({ timestamp: -1 })
           .lean();
         const messageCount = await Message.countDocuments({ chat: chat._id });
+        // Подсчёт непрочитанных сообщений
+        const unreadCount = await Message.countDocuments({
+          chat: chat._id,
+          readBy: { $ne: userId }
+        });
         return {
           ...chat,
           id: chat._id?.toString() || chat._id,
@@ -794,7 +799,7 @@ app.get("/api/chats", authenticateToken, async (req, res) => {
               }
             : null,
           messageCount,
-          unreadCount: 0, // TODO: реализовать
+          unreadCount,
         };
       })
     );
@@ -812,6 +817,11 @@ app.get("/api/chats", authenticateToken, async (req, res) => {
       const globalMessageCount = await Message.countDocuments({
         chat: "global",
       });
+      // Подсчёт непрочитанных сообщений для глобального чата
+      const globalUnreadCount = await Message.countDocuments({
+        chat: "global",
+        readBy: { $ne: userId }
+      });
       chatList.unshift({
         ...globalChat,
         id: globalChat._id?.toString() || globalChat._id,
@@ -828,7 +838,7 @@ app.get("/api/chats", authenticateToken, async (req, res) => {
             }
           : null,
         messageCount: globalMessageCount,
-        unreadCount: 0,
+        unreadCount: globalUnreadCount,
       });
       console.log("                                  ");
     }
@@ -1020,6 +1030,11 @@ io.on("connection", async (socket) => {
             const messageCount = await Message.countDocuments({
               chat: chat._id,
             });
+            // Подсчёт непрочитанных сообщений
+            const unreadCount = await Message.countDocuments({
+              chat: chat._id,
+              readBy: { $ne: user.id }
+            });
             return {
               ...chat,
               id: chat._id?.toString() || chat._id,
@@ -1034,7 +1049,7 @@ io.on("connection", async (socket) => {
                   }
                 : null,
               messageCount,
-              unreadCount: 0,
+              unreadCount,
             };
           })
         );
@@ -1052,6 +1067,11 @@ io.on("connection", async (socket) => {
           const globalMessageCount = await Message.countDocuments({
             chat: "global",
           });
+          // Подсчёт непрочитанных сообщений для глобального чата
+          const globalUnreadCount = await Message.countDocuments({
+            chat: "global",
+            readBy: { $ne: user.id }
+          });
           chatList.unshift({
             ...globalChat,
             id: globalChat._id?.toString() || globalChat._id,
@@ -1059,18 +1079,16 @@ io.on("connection", async (socket) => {
             lastMessage: globalLastMessage
               ? {
                   ...globalLastMessage,
-                  id:
-                    globalLastMessage._id?.toString() || globalLastMessage._id,
+                  id: globalLastMessage._id?.toString() || globalLastMessage._id,
                   senderId:
                     globalLastMessage.sender?.toString() ||
                     globalLastMessage.sender,
                   chatId:
-                    globalLastMessage.chat?.toString() ||
-                    globalLastMessage.chat,
+                    globalLastMessage.chat?.toString() || globalLastMessage.chat,
                 }
               : null,
             messageCount: globalMessageCount,
-            unreadCount: 0,
+            unreadCount: globalUnreadCount,
           });
           console.log("                                  ");
         }
