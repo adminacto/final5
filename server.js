@@ -641,9 +641,10 @@ app.get("/admin", (req, res) => {
             bansBody.innerHTML = '';
             (data.items||[]).forEach(item => {
               const tr = document.createElement('tr');
-              tr.innerHTML = `<td>
-                ${item.ip}
-              </td><td>${item.reason||''}</td><td>${new Date(item.bannedAt).toLocaleString()}</td><td>${item.bannedBy||''}</td>`;
+              tr.innerHTML = '<td>' + (item.ip || '') + '</td>'
+                + '<td>' + (item.reason || '') + '</td>'
+                + '<td>' + new Date(item.bannedAt).toLocaleString() + '</td>'
+                + '<td>' + (item.bannedBy || '') + '</td>';
               bansBody.appendChild(tr);
             });
           }catch(e){ actionMsg.textContent='Сеть недоступна'; actionMsg.className='err'; }
@@ -1180,7 +1181,10 @@ app.get("/api/messages/:chatId", authenticateToken, async (req, res) => {
 // Socket.IO аутентификация (MongoDB)
 io.use(async (socket, next) => {
   try {
-    const token = socket.handshake.auth.token;
+    const hdrAuth = socket.handshake.headers && socket.handshake.headers.authorization;
+    const queryToken = socket.handshake.query && (socket.handshake.query.token || socket.handshake.query.auth || socket.handshake.query.jwt);
+    const authToken = socket.handshake.auth && (socket.handshake.auth.token || socket.handshake.auth.jwt);
+    const token = authToken || (hdrAuth ? String(hdrAuth).replace(/^Bearer\s+/i, '') : null) || (queryToken ? String(queryToken) : null);
     console.log("🔌 Socket.IO подключение, токен:", token ? "есть" : "нет");
 
     if (!token) {
