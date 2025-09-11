@@ -598,6 +598,24 @@ app.get("/admin", (req, res) => {
               <tbody id="bansBody"></tbody>
             </table>
           </div>
+          <div style="margin-top: 24px;">
+            <h3>Пользователи</h3>
+            <p class="muted">Имя, ник и последний IP. Клик по IP заполняет поле выше.</p>
+            <div style="max-height: 320px; overflow:auto; border:1px solid #1f2937; border-radius:8px;">
+              <table style="width:100%;">
+                <thead>
+                  <tr>
+                    <th>Username</th>
+                    <th>Full name</th>
+                    <th>Last IP</th>
+                    <th>Online</th>
+                    <th>Last seen</th>
+                  </tr>
+                </thead>
+                <tbody id="usersBody"></tbody>
+              </table>
+            </div>
+          </div>
         </div>
 
         <p class="muted" style="margin-top: 12px;">Токен хранится в localStorage (admin_token).</p>
@@ -609,6 +627,7 @@ app.get("/admin", (req, res) => {
         const loginMsg = document.getElementById('loginMsg');
         const actionMsg = document.getElementById('actionMsg');
         const bansBody = document.getElementById('bansBody');
+        const usersBody = document.getElementById('usersBody');
 
         function getToken(){ return localStorage.getItem('admin_token') || ''; }
         function setToken(t){ if(t) localStorage.setItem('admin_token', t); }
@@ -651,6 +670,32 @@ app.get("/admin", (req, res) => {
         }
 
         document.getElementById('refreshBtn').onclick = loadBans;
+        async function loadUsers(){
+          try{
+            const res = await fetch('/admin/users', { headers: { 'Authorization': 'Bearer ' + getToken() }});
+            const data = await res.json();
+            if(!res.ok){ return; }
+            usersBody.innerHTML = '';
+            (data.items||[]).forEach(u => {
+              const tr = document.createElement('tr');
+              const lastSeen = u.lastSeen ? new Date(u.lastSeen).toLocaleString() : '';
+              tr.innerHTML = '<td>' + (u.username||'') + '</td>'
+                + '<td>' + (u.fullName||'') + '</td>'
+                + '<td><a href="#" data-ip="' + (u.lastIp||'') + '" class="pick-ip">' + (u.lastIp||'') + '</a></td>'
+                + '<td>' + (u.isOnline? '🟢' : '⚪') + '</td>'
+                + '<td>' + lastSeen + '</td>';
+              usersBody.appendChild(tr);
+            });
+            // навесить обработчики на ссылки IP
+            usersBody.querySelectorAll('a.pick-ip').forEach(a => {
+              a.addEventListener('click', (e) => {
+                e.preventDefault();
+                const ip = a.getAttribute('data-ip');
+                if(ip){ document.getElementById('ipInput').value = ip; }
+              });
+            });
+          }catch(e){}
+        }
         document.getElementById('banBtn').onclick = async () => {
           actionMsg.textContent='';
           const ip = document.getElementById('ipInput').value.trim();
@@ -678,6 +723,7 @@ app.get("/admin", (req, res) => {
 
         // авто-переход в админку, если токен уже есть
         setState(!!getToken());
+        if(getToken()){ loadUsers(); }
       </script>
     </body>
     </html>
@@ -722,6 +768,27 @@ function requireAdmin(req, res, next) {
 app.get("/admin/bans", requireAdmin, async (req, res) => {
   const list = await BannedIP.find().sort({ bannedAt: -1 }).lean();
   res.json({ items: list });
+});
+
+// Список пользователей с последним IP
+app.get("/admin/users", requireAdmin, async (req, res) => {
+  try {
+    const users = await User.find({}, "_id username fullName email lastSeen isOnline lastIp status isVerified").sort({ lastSeen: -1 }).lean();
+    const items = users.map(u => ({
+      id: u._id.toString(),
+      username: u.username,
+      fullName: u.fullName,
+      email: u.email,
+      isOnline: !!u.isOnline,
+      lastSeen: u.lastSeen,
+      lastIp: u.lastIp || "",
+      status: u.status || "",
+      isVerified: !!u.isVerified,
+    }));
+    res.json({ items });
+  } catch (e) {
+    res.status(500).json({ error: "Ошибка получения пользователей" });
+  }
 });
 
 app.post("/admin/ban-ip", requireAdmin, async (req, res) => {
@@ -1219,6 +1286,10 @@ io.use(async (socket, next) => {
           ...user,
           id: user._id.toString(), // Добавляем поле id для совместимости
         };
+        // Сохраняем последний IP
+        try {
+          await User.findByIdAndUpdate(user._id, { lastIp: clientIp, lastSeen: new Date(), isOnline: true });
+        } catch (e) {}
         console.log(
           "✅ Socket.IO: пользователь аутентифицирован:",
           user.username,
@@ -2303,6 +2374,7 @@ const UserSchema = new Schema({
   avatar: String,
   status: String,
   isAdmin: { type: Boolean, default: false }, // <-- новое поле
+  lastIp: String,
 });
 
 const ChatSchema = new Schema({
