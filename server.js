@@ -530,6 +530,159 @@ app.get("/", (req, res) => {
   `);
 });
 
+// Простейшая веб-админка: логин и управление баном IP
+app.get("/admin", (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html lang="ru">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <title>ACTOGRAM Admin</title>
+      <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; background: #0f172a; color: #e2e8f0; }
+        .wrap { max-width: 880px; margin: 0 auto; padding: 24px; }
+        .card { background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px; margin-top: 16px; }
+        .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+        input, button { height: 40px; border-radius: 8px; border: 1px solid #374151; background: #0b1220; color: #e2e8f0; padding: 0 12px; }
+        button { background: linear-gradient(135deg, #3b82f6, #8b5cf6); border: none; cursor: pointer; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border-bottom: 1px solid #1f2937; padding: 8px 6px; }
+        .muted { color: #94a3b8; font-size: 12px; }
+        .ok { color: #34d399; }
+        .err { color: #f87171; }
+        .hidden { display: none; }
+      </style>
+    </head>
+    <body>
+      <div class="wrap">
+        <h1>ACTOGRAM Admin</h1>
+        <p class="muted">JWT-панель управления: вход и бан по IP</p>
+
+        <div id="loginCard" class="card">
+          <h3>Вход администратора</h3>
+          <div class="row" style="margin-top: 8px;">
+            <input id="username" placeholder="Логин" value="Mumtozbekk" />
+            <input id="password" type="password" placeholder="Пароль" />
+            <button id="loginBtn">Войти</button>
+          </div>
+          <div id="loginMsg" class="muted" style="margin-top: 8px;"></div>
+        </div>
+
+        <div id="adminCard" class="card hidden">
+          <div class="row" style="justify-content: space-between;">
+            <h3>Блокировка IP</h3>
+            <button id="logoutBtn" style="background:#334155;">Выйти</button>
+          </div>
+          <div class="row" style="margin-top: 8px;">
+            <input id="ipInput" placeholder="IP адрес (например 1.2.3.4)" />
+            <input id="reasonInput" placeholder="Причина (необязательно)" />
+            <button id="banBtn">Забанить IP</button>
+            <button id="unbanBtn" style="background:#ef4444;">Разбанить IP</button>
+          </div>
+          <div id="actionMsg" class="muted" style="margin-top: 8px;"></div>
+
+          <div style="margin-top: 16px;" class="row">
+            <button id="refreshBtn">Обновить список</button>
+          </div>
+          <div style="margin-top: 8px;">
+            <table>
+              <thead>
+                <tr>
+                  <th>IP</th>
+                  <th>Причина</th>
+                  <th>Когда</th>
+                  <th>Кем</th>
+                </tr>
+              </thead>
+              <tbody id="bansBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <p class="muted" style="margin-top: 12px;">Токен хранится в localStorage (admin_token).</p>
+      </div>
+
+      <script>
+        const loginCard = document.getElementById('loginCard');
+        const adminCard = document.getElementById('adminCard');
+        const loginMsg = document.getElementById('loginMsg');
+        const actionMsg = document.getElementById('actionMsg');
+        const bansBody = document.getElementById('bansBody');
+
+        function getToken(){ return localStorage.getItem('admin_token') || ''; }
+        function setToken(t){ if(t) localStorage.setItem('admin_token', t); }
+        function clearToken(){ localStorage.removeItem('admin_token'); }
+        function setState(logged){
+          if(logged){ loginCard.classList.add('hidden'); adminCard.classList.remove('hidden'); loadBans(); }
+          else { adminCard.classList.add('hidden'); loginCard.classList.remove('hidden'); }
+        }
+
+        document.getElementById('loginBtn').onclick = async () => {
+          loginMsg.textContent = '';
+          const username = document.getElementById('username').value.trim();
+          const password = document.getElementById('password').value;
+          try{
+            const res = await fetch('/admin/login', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({username, password})});
+            const data = await res.json();
+            if(!res.ok){ loginMsg.textContent = (data && data.error) || 'Ошибка входа'; loginMsg.className='err'; return; }
+            setToken(data.token); loginMsg.textContent='Вход выполнен'; loginMsg.className='ok'; setState(true);
+          }catch(e){ loginMsg.textContent = 'Сеть недоступна'; loginMsg.className='err'; }
+        };
+
+        document.getElementById('logoutBtn').onclick = () => { clearToken(); setState(false); };
+
+        async function loadBans(){
+          actionMsg.textContent='';
+          try{
+            const res = await fetch('/admin/bans', { headers: { 'Authorization': 'Bearer ' + getToken() }});
+            const data = await res.json();
+            if(!res.ok){ actionMsg.textContent = (data && data.error) || 'Ошибка загрузки'; actionMsg.className='err'; return; }
+            bansBody.innerHTML = '';
+            (data.items||[]).forEach(item => {
+              const tr = document.createElement('tr');
+              tr.innerHTML = `<td>
+                ${item.ip}
+              </td><td>${item.reason||''}</td><td>${new Date(item.bannedAt).toLocaleString()}</td><td>${item.bannedBy||''}</td>`;
+              bansBody.appendChild(tr);
+            });
+          }catch(e){ actionMsg.textContent='Сеть недоступна'; actionMsg.className='err'; }
+        }
+
+        document.getElementById('refreshBtn').onclick = loadBans;
+        document.getElementById('banBtn').onclick = async () => {
+          actionMsg.textContent='';
+          const ip = document.getElementById('ipInput').value.trim();
+          const reason = document.getElementById('reasonInput').value.trim();
+          if(!ip){ actionMsg.textContent='Укажите IP'; actionMsg.className='err'; return; }
+          try{
+            const res = await fetch('/admin/ban-ip', { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + getToken() }, body: JSON.stringify({ ip, reason }) });
+            const data = await res.json();
+            if(!res.ok){ actionMsg.textContent = (data && data.error) || 'Ошибка бана'; actionMsg.className='err'; return; }
+            actionMsg.textContent='IP забанен'; actionMsg.className='ok'; loadBans();
+          }catch(e){ actionMsg.textContent='Сеть недоступна'; actionMsg.className='err'; }
+        };
+
+        document.getElementById('unbanBtn').onclick = async () => {
+          actionMsg.textContent='';
+          const ip = document.getElementById('ipInput').value.trim();
+          if(!ip){ actionMsg.textContent='Укажите IP'; actionMsg.className='err'; return; }
+          try{
+            const res = await fetch('/admin/unban-ip', { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + getToken() }, body: JSON.stringify({ ip }) });
+            const data = await res.json();
+            if(!res.ok){ actionMsg.textContent = (data && data.error) || 'Ошибка разбана'; actionMsg.className='err'; return; }
+            actionMsg.textContent='IP разбанен'; actionMsg.className='ok'; loadBans();
+          }catch(e){ actionMsg.textContent='Сеть недоступна'; actionMsg.className='err'; }
+        };
+
+        // авто-переход в админку, если токен уже есть
+        setState(!!getToken());
+      </script>
+    </body>
+    </html>
+  `);
+});
+
 // -------- Admin: JWT login --------
 app.post("/admin/login", authLimiter, async (req, res) => {
   try {
