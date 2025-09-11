@@ -80,6 +80,11 @@ const JWT_SECRET =
   process.env.JWT_SECRET || "actogram_ultra_secure_key_2024_v3";
 const PORT = process.env.PORT || 3001;
 
+// Админ доступ (минимальный, можно вынести в env)
+const ADMIN_USERNAME = "Mumtozbekk";
+// Сложный пароль: 24+ символов, смешанный набор
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "pA7$Zk!2gHq9#LmXv4@rT1wQ";
+
 // � азрешенные домены
 const allowedOrigins = [
   "https://acto-uimuz.vercel.app",
@@ -219,6 +224,25 @@ const reactionEmojis = [
   "👏",
   "🎉",
 ];
+
+// -------- Модель забаненных IP --------
+const BannedIPSchema = new Schema({
+  ip: { type: String, unique: true, required: true },
+  reason: { type: String },
+  bannedAt: { type: Date, default: Date.now },
+  bannedBy: { type: String, default: ADMIN_USERNAME },
+});
+const BannedIP = model("BannedIP", BannedIPSchema);
+
+// Получение реального IP c учетом proxy
+function getClientIp(req) {
+  const xff = req.headers["x-forwarded-for"]; // может быть списком
+  if (xff) {
+    const ips = Array.isArray(xff) ? xff : String(xff).split(",");
+    if (ips.length > 0) return ips[0].trim();
+  }
+  return req.ip || req.connection?.remoteAddress || req.socket?.remoteAddress || "";
+}
 
 // Создание пользователя-бота при запуске
 const BOT_USERNAME = "@actogram_bot";
@@ -504,6 +528,90 @@ app.get("/", (req, res) => {
     </body>
     </html>
   `);
+});
+
+// -------- Admin: JWT login --------
+app.post("/admin/login", authLimiter, async (req, res) => {
+  try {
+    const { username, password } = req.body || {};
+    if (username !== ADMIN_USERNAME || password !== ADMIN_PASSWORD) {
+      return res.status(401).json({ error: "Неверные данные" });
+    }
+    const token = jwt.sign(
+      { admin: true, username: ADMIN_USERNAME },
+      JWT_SECRET,
+      { expiresIn: "12h" }
+    );
+    res.json({ token });
+  } catch (err) {
+    res.status(500).json({ error: "Ошибка входа" });
+  }
+});
+
+// -------- Admin: middleware --------
+function requireAdmin(req, res, next) {
+  const authHeader = req.headers["authorization"] || "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
+  if (!token) return res.status(401).json({ error: "Токен обязателен" });
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    if (!payload?.admin || payload?.username !== ADMIN_USERNAME) {
+      return res.status(403).json({ error: "Нет доступа" });
+    }
+    next();
+  } catch (e) {
+    return res.status(403).json({ error: "Недействительный токен" });
+  }
+}
+
+// -------- Admin: IP ban management --------
+app.get("/admin/bans", requireAdmin, async (req, res) => {
+  const list = await BannedIP.find().sort({ bannedAt: -1 }).lean();
+  res.json({ items: list });
+});
+
+app.post("/admin/ban-ip", requireAdmin, async (req, res) => {
+  const { ip, reason } = req.body || {};
+  if (!ip || typeof ip !== "string") {
+    return res.status(400).json({ error: "ip обязателен" });
+  }
+  try {
+    await BannedIP.updateOne(
+      { ip },
+      { $set: { ip, reason: reason || "", bannedAt: new Date(), bannedBy: ADMIN_USERNAME } },
+      { upsert: true }
+    );
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: "Ошибка бана" });
+  }
+});
+
+app.post("/admin/unban-ip", requireAdmin, async (req, res) => {
+  const { ip } = req.body || {};
+  if (!ip || typeof ip !== "string") {
+    return res.status(400).json({ error: "ip обязателен" });
+  }
+  try {
+    await BannedIP.deleteOne({ ip });
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: "Ошибка разбана" });
+  }
+});
+
+// -------- Enforce IP bans on HTTP --------
+app.use(async (req, res, next) => {
+  try {
+    const clientIp = getClientIp(req);
+    const banned = await BannedIP.findOne({ ip: clientIp }).lean();
+    if (banned) {
+      return res.status(403).json({ error: "Ваш IP забанен" });
+    }
+  } catch (e) {
+    // молча пропускаем в случае ошибки, чтобы не ломать сервис
+  }
+  next();
 });
 
 // API Routes
@@ -934,6 +1042,15 @@ io.use(async (socket, next) => {
       }
 
       try {
+        // Проверка бана по IP до допуска
+        const reqLike = { headers: socket.handshake.headers, ip: socket.request?.ip };
+        const clientIp = getClientIp(reqLike);
+        const banned = await BannedIP.findOne({ ip: clientIp }).lean();
+        if (banned) {
+          console.log("❌ Socket.IO: IP забанен:", clientIp);
+          return next(new Error("IP забанен"));
+        }
+
         const user = await User.findById(decoded.userId).lean();
         if (!user) {
           console.log("❌ Socket.IO: пользователь не найден в БД");
