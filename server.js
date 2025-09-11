@@ -541,7 +541,11 @@ app.get("/admin", (req, res) => {
       <title>ACTOGRAM Admin</title>
       <style>
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; background: #0f172a; color: #e2e8f0; }
-        .wrap { max-width: 880px; margin: 0 auto; padding: 24px; }
+        #bg { position: fixed; inset: 0; z-index: 0; overflow: hidden; background: #000; }
+        #bg canvas { width: 100%; height: 100%; display: block; }
+        #bg .v-out { position:absolute; inset:0; pointer-events:none; background: radial-gradient(circle, rgba(0,0,0,0) 60%, rgba(0,0,0,1) 100%); }
+        #bg .v-center { position:absolute; inset:0; pointer-events:none; background: radial-gradient(circle, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0) 60%); }
+        .wrap { position: relative; z-index: 1; max-width: 880px; margin: 0 auto; padding: 24px; }
         .card { background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px; margin-top: 16px; }
         .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
         input, button { height: 40px; border-radius: 8px; border: 1px solid #374151; background: #0b1220; color: #e2e8f0; padding: 0 12px; }
@@ -555,6 +559,11 @@ app.get("/admin", (req, res) => {
       </style>
     </head>
     <body>
+      <div id="bg">
+        <canvas id="lgCanvas"></canvas>
+        <div class="v-out"></div>
+        <div class="v-center"></div>
+      </div>
       <div class="wrap">
         <h1>ACTOGRAM Admin</h1>
         <p class="muted">JWT-панель управления: вход и бан по IP</p>
@@ -622,6 +631,82 @@ app.get("/admin", (req, res) => {
       </div>
 
       <script>
+        // Lightweight LetterGlitch background (canvas-only, no React)
+        (function(){
+          const canvas = document.getElementById('lgCanvas');
+          if(!canvas) return;
+          const ctx = canvas.getContext('2d');
+          const glitchColors = ['#2b4539', '#61dca3', '#61b3dc'];
+          const characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ!@#$&*()-_+=/[]{};:<>.,0123456789";
+          const letters = [];
+          let grid = { columns: 0, rows: 0 };
+          let lastGlitchTime = Date.now();
+          const glitchSpeed = 50;
+          const fontSize = 16;
+          const charWidth = 10;
+          const charHeight = 20;
+
+          function getRandomChar(){
+            return characters.charAt(Math.floor(Math.random()*characters.length));
+          }
+          function getRandomColor(){
+            return glitchColors[Math.floor(Math.random()*glitchColors.length)];
+          }
+          function calculateGrid(w,h){
+            return { columns: Math.ceil(w/charWidth), rows: Math.ceil(h/charHeight) };
+          }
+          function initLetters(cols, rows){
+            grid = { columns: cols, rows: rows };
+            const total = cols*rows;
+            letters.length = 0;
+            for(let i=0;i<total;i++){
+              letters.push({ char: getRandomChar(), color: getRandomColor() });
+            }
+          }
+          function resize(){
+            const dpr = window.devicePixelRatio || 1;
+            const rect = document.body.getBoundingClientRect();
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            canvas.style.width = rect.width + 'px';
+            canvas.style.height = rect.height + 'px';
+            ctx.setTransform(dpr,0,0,dpr,0,0);
+            const g = calculateGrid(rect.width, rect.height);
+            initLetters(g.columns, g.rows);
+            draw();
+          }
+          function draw(){
+            const rect = canvas.getBoundingClientRect();
+            ctx.clearRect(0,0,rect.width,rect.height);
+            ctx.font = fontSize + 'px monospace';
+            ctx.textBaseline = 'top';
+            for(let i=0;i<letters.length;i++){
+              const x = (i % grid.columns) * charWidth;
+              const y = Math.floor(i / grid.columns) * charHeight;
+              ctx.fillStyle = letters[i].color;
+              ctx.fillText(letters[i].char, x, y);
+            }
+          }
+          function update(){
+            const count = Math.max(1, Math.floor(letters.length * 0.05));
+            for(let i=0;i<count;i++){
+              const idx = Math.floor(Math.random()*letters.length);
+              if(letters[idx]){
+                letters[idx].char = getRandomChar();
+                letters[idx].color = getRandomColor();
+              }
+            }
+          }
+          function loop(){
+            const now = Date.now();
+            if(now - lastGlitchTime >= glitchSpeed){ update(); draw(); lastGlitchTime = now; }
+            requestAnimationFrame(loop);
+          }
+          window.addEventListener('resize', ()=>{ clearTimeout(window.__lg_to); window.__lg_to = setTimeout(resize, 100); });
+          resize();
+          loop();
+        })();
+
         const loginCard = document.getElementById('loginCard');
         const adminCard = document.getElementById('adminCard');
         const loginMsg = document.getElementById('loginMsg');
