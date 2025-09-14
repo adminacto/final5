@@ -50,12 +50,13 @@ const authLimiter = rateLimit({
   skip: (req) => req.ip === "127.0.0.1" || req.ip === "::1",
 });
 
-// Создать папку avatars, если не существует
+// Create avatars directory if it doesn't exist
 const avatarsDir = path.join(__dirname, "public", "avatars");
 if (!fs.existsSync(avatarsDir)) {
   fs.mkdirSync(avatarsDir, { recursive: true });
 }
 
+// Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, avatarsDir);
@@ -123,8 +124,10 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(express.static(path.join(__dirname, "public")));
+app.use('/avatars', express.static(avatarsDir));
 app.use(cookieParser());
 
 //                                        HTML-
@@ -224,6 +227,40 @@ const reactionEmojis = [
   "👏",
   "🎉",
 ];
+
+// Avatar upload endpoint
+app.post('/api/upload-avatar', authenticateToken, upload.single('avatar'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const userId = req.user.userId;
+    const avatarUrl = `/avatars/${req.file.filename}`;
+
+    // Update user's avatar in the database
+    await User.findByIdAndUpdate(userId, { avatar: avatarUrl });
+
+    // Update the current user data in the response
+    const updatedUser = await User.findById(userId);
+    
+    // Update all active connections for this user
+    activeConnections.forEach((uid, socketId) => {
+      if (uid === userId) {
+        io.to(socketId).emit('user_updated', updatedUser);
+      }
+    });
+
+    res.json({
+      success: true,
+      avatarUrl,
+      user: updatedUser
+    });
+  } catch (error) {
+    console.error('Avatar upload error:', error);
+    res.status(500).json({ error: 'Failed to upload avatar' });
+  }
+});
 
 // -------- Модель забаненных IP --------
 const BannedIPSchema = new Schema({
