@@ -2736,6 +2736,43 @@ app.post("/api/clear-global-chat", authenticateToken, async (req, res) => {
   }
 });
 
+// Endpoint для загрузки аватарки пользователя
+app.post(
+  "/api/upload-avatar",
+  authenticateToken,
+  upload.single("avatar"),
+  async (req, res) => {
+    try {
+      console.log("📷 Запрос на загрузку аватарки");
+      console.log("📷 Файл:", req.file);
+      console.log("📷 User:", req.user);
+
+      if (!req.file) {
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+        return res.status(400).json({ error: "Файл аватарки обязателен" });
+      }
+
+      const userId = req.user.userId;
+      const avatarUrl = `/avatars/${req.file.filename}`;
+
+      // Обновляем аватарку пользователя в базе данных
+      await User.findByIdAndUpdate(userId, { avatar: avatarUrl });
+
+      console.log(`📷 Аватарка загружена: ${req.user.username} -> ${avatarUrl}`);
+
+      res.json({
+        success: true,
+        avatarUrl: avatarUrl,
+      });
+
+    } catch (error) {
+      console.error("upload-avatar error:", error);
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.status(500).json({ error: "Ошибка загрузки аватарки" });
+    }
+  }
+);
+
 // Endpoint для загрузки изображения в чат
 app.post(
   "/api/upload-image",
