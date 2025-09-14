@@ -238,27 +238,50 @@ app.post('/api/upload-avatar', authenticateToken, upload.single('avatar'), async
     const userId = req.user.userId;
     const avatarUrl = `/avatars/${req.file.filename}`;
 
-    // Update user's avatar in the database
-    await User.findByIdAndUpdate(userId, { avatar: avatarUrl });
+    // Ensure the User model is properly imported/defined
+    if (!User) {
+      throw new Error('User model not found');
+    }
 
-    // Update the current user data in the response
-    const updatedUser = await User.findById(userId);
+    // Update user's avatar in the database
+    const updatedUser = await User.findByIdAndUpdate(
+      userId, 
+      { avatar: avatarUrl },
+      { new: true } // Return the updated document
+    );
+
+    if (!updatedUser) {
+      throw new Error('User not found');
+    }
     
     // Update all active connections for this user
-    activeConnections.forEach((uid, socketId) => {
-      if (uid === userId) {
-        io.to(socketId).emit('user_updated', updatedUser);
-      }
-    });
+    if (activeConnections && io) {
+      activeConnections.forEach((uid, socketId) => {
+        if (uid === userId) {
+          io.to(socketId).emit('user_updated', updatedUser);
+        }
+      });
+    }
 
+    // Return both avatarUrl and user object for flexibility
     res.json({
       success: true,
       avatarUrl,
-      user: updatedUser
+      user: {
+        id: updatedUser._id,
+        username: updatedUser.username,
+        email: updatedUser.email,
+        avatar: updatedUser.avatar,
+        isOnline: updatedUser.isOnline,
+        status: updatedUser.status
+      }
     });
   } catch (error) {
     console.error('Avatar upload error:', error);
-    res.status(500).json({ error: 'Failed to upload avatar' });
+    res.status(500).json({ 
+      success: false,
+      error: error.message || 'Failed to upload avatar' 
+    });
   }
 });
 
