@@ -18,6 +18,13 @@ const cookieParser = require("cookie-parser");
 const app = express();
 const server = http.createServer(app);
 
+// Serve static files from the 'avatars' directory
+const avatarsDir = path.join(__dirname, 'avatars');
+if (!fs.existsSync(avatarsDir)) {
+  fs.mkdirSync(avatarsDir, { recursive: true });
+}
+app.use('/avatars', express.static(avatarsDir));
+
 // Настройка trust proxy для работы за прокси (Render.com)
 app.set("trust proxy", 1);
 
@@ -50,11 +57,7 @@ const authLimiter = rateLimit({
   skip: (req) => req.ip === "127.0.0.1" || req.ip === "::1",
 });
 
-// Создать папку avatars, если не существует
-const avatarsDir = path.join(__dirname, "public", "avatars");
-if (!fs.existsSync(avatarsDir)) {
-  fs.mkdirSync(avatarsDir, { recursive: true });
-}
+// Using the avatarsDir defined above
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
