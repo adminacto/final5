@@ -228,63 +228,6 @@ const reactionEmojis = [
   "🎉",
 ];
 
-// Avatar upload endpoint
-app.post('/api/upload-avatar', authenticateToken, upload.single('avatar'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded' });
-    }
-
-    const userId = req.user.userId;
-    const avatarUrl = `/avatars/${req.file.filename}`;
-
-    // Ensure the User model is properly imported/defined
-    if (!User) {
-      throw new Error('User model not found');
-    }
-
-    // Update user's avatar in the database
-    const updatedUser = await User.findByIdAndUpdate(
-      userId, 
-      { avatar: avatarUrl },
-      { new: true } // Return the updated document
-    );
-
-    if (!updatedUser) {
-      throw new Error('User not found');
-    }
-    
-    // Update all active connections for this user
-    if (activeConnections && io) {
-      activeConnections.forEach((uid, socketId) => {
-        if (uid === userId) {
-          io.to(socketId).emit('user_updated', updatedUser);
-        }
-      });
-    }
-
-    // Return both avatarUrl and user object for flexibility
-    res.json({
-      success: true,
-      avatarUrl,
-      user: {
-        id: updatedUser._id,
-        username: updatedUser.username,
-        email: updatedUser.email,
-        avatar: updatedUser.avatar,
-        isOnline: updatedUser.isOnline,
-        status: updatedUser.status
-      }
-    });
-  } catch (error) {
-    console.error('Avatar upload error:', error);
-    res.status(500).json({ 
-      success: false,
-      error: error.message || 'Failed to upload avatar' 
-    });
-  }
-});
-
 // -------- Модель забаненных IP --------
 const BannedIPSchema = new Schema({
   ip: { type: String, unique: true, required: true },
@@ -1153,27 +1096,6 @@ app.get("/api/health", async (req, res) => {
     res.status(500).json({ error: "Ошибка сервера" });
   }
 });
-
-// Endpoint для загрузки аватара
-app.post(
-  "/api/upload-avatar",
-  authenticateToken,
-  upload.single("avatar"),
-  async (req, res) => {
-    try {
-      if (!req.file) {
-        return res.status(400).json({ error: "Файл не загружен" });
-      }
-      const userId = req.user.userId;
-      const avatarUrl = `/avatars/${req.file.filename}`;
-      await User.findByIdAndUpdate(userId, { avatar: avatarUrl });
-      res.json({ success: true, avatar: avatarUrl });
-    } catch (error) {
-      console.error("upload-avatar error:", error);
-      res.status(500).json({ error: "Ошибка загрузки аватара" });
-    }
-  }
-);
 
 // Endpoint для создания группы/канала с аватаром
 app.post(
