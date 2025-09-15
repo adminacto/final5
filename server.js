@@ -50,12 +50,13 @@ const authLimiter = rateLimit({
   skip: (req) => req.ip === "127.0.0.1" || req.ip === "::1",
 });
 
-// Создать папку avatars, если не существует
+// Create avatars directory if it doesn't exist
 const avatarsDir = path.join(__dirname, "public", "avatars");
 if (!fs.existsSync(avatarsDir)) {
   fs.mkdirSync(avatarsDir, { recursive: true });
 }
 
+// Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, avatarsDir);
@@ -123,8 +124,10 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(express.static(path.join(__dirname, "public")));
+app.use('/avatars', express.static(avatarsDir));
 app.use(cookieParser());
 
 //                                        HTML-
@@ -530,6 +533,11 @@ app.get("/", (req, res) => {
   `);
 });
 
+// Health check endpoint for monitoring services
+app.get("/health", (req, res) => {
+  res.status(200).send("ok");
+});
+
 // Простейшая веб-админка: логин и управление баном IP
 app.get("/admin", (req, res) => {
   res.send(`
@@ -609,6 +617,11 @@ app.get("/admin", (req, res) => {
           </div>
           <div style="margin-top: 24px;">
             <h3>Пользователи</h3>
+            <div class="row" style="margin-bottom: 8px;">
+              <input id="userSearch" placeholder="Поиск по @username, имени или email..." style="flex:1;" />
+              <button id="searchUsersBtn">Найти</button>
+              <button id="clearSearchBtn" style="background:#6b7280;">Очистить</button>
+            </div>
             <p class="muted">Имя, ник и последний IP. Клик по IP заполняет поле выше.</p>
             <div style="max-height: 320px; overflow:auto; border:1px solid #1f2937; border-radius:8px;">
               <table style="width:100%;">
@@ -619,11 +632,20 @@ app.get("/admin", (req, res) => {
                     <th>Last IP</th>
                     <th>Online</th>
                     <th>Last seen</th>
+                    <th>Действия</th>
                   </tr>
                 </thead>
                 <tbody id="usersBody"></tbody>
               </table>
             </div>
+          </div>
+          
+          <div id="userDevicesModal" class="card hidden" style="margin-top: 16px;">
+            <div class="row" style="justify-content: space-between;">
+              <h3 id="userDevicesTitle">Устройства пользователя</h3>
+              <button id="closeDevicesBtn" style="background:#6b7280;">Закрыть</button>
+            </div>
+            <div id="userDevicesContent"></div>
           </div>
         </div>
 
@@ -713,6 +735,9 @@ app.get("/admin", (req, res) => {
         const actionMsg = document.getElementById('actionMsg');
         const bansBody = document.getElementById('bansBody');
         const usersBody = document.getElementById('usersBody');
+        const userDevicesModal = document.getElementById('userDevicesModal');
+        const userDevicesTitle = document.getElementById('userDevicesTitle');
+        const userDevicesContent = document.getElementById('userDevicesContent');
 
         function getToken(){ return localStorage.getItem('admin_token') || ''; }
         function setToken(t){ if(t) localStorage.setItem('admin_token', t); }
@@ -755,9 +780,21 @@ app.get("/admin", (req, res) => {
         }
 
         document.getElementById('refreshBtn').onclick = loadBans;
-        async function loadUsers(){
+        document.getElementById('searchUsersBtn').onclick = () => {
+          const search = document.getElementById('userSearch').value.trim();
+          loadUsers(search);
+        };
+        document.getElementById('clearSearchBtn').onclick = () => {
+          document.getElementById('userSearch').value = '';
+          loadUsers();
+        };
+        document.getElementById('closeDevicesBtn').onclick = () => {
+          userDevicesModal.classList.add('hidden');
+        };
+        async function loadUsers(search = ''){
           try{
-            const res = await fetch('/admin/users', { headers: { 'Authorization': 'Bearer ' + getToken() }});
+            const url = search ? '/admin/users?search=' + encodeURIComponent(search) : '/admin/users';
+            const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + getToken() }});
             const data = await res.json();
             if(!res.ok){ return; }
             usersBody.innerHTML = '';
@@ -768,7 +805,8 @@ app.get("/admin", (req, res) => {
                 + '<td>' + (u.fullName||'') + '</td>'
                 + '<td><a href="#" data-ip="' + (u.lastIp||'') + '" class="pick-ip">' + (u.lastIp||'') + '</a></td>'
                 + '<td>' + (u.isOnline? '🟢' : '⚪') + '</td>'
-                + '<td>' + lastSeen + '</td>';
+                + '<td>' + lastSeen + '</td>'
+                + '<td><button class="show-devices" data-user-id="' + u.id + '" data-username="' + (u.username||'') + '" style="background:#3b82f6; padding:4px 8px; font-size:12px;">Устройства</button></td>';
               usersBody.appendChild(tr);
             });
             // навесить обработчики на ссылки IP
@@ -779,7 +817,52 @@ app.get("/admin", (req, res) => {
                 if(ip){ document.getElementById('ipInput').value = ip; }
               });
             });
+            // навесить обработчики на кнопки устройств
+            usersBody.querySelectorAll('button.show-devices').forEach(btn => {
+              btn.addEventListener('click', (e) => {
+                const userId = e.target.getAttribute('data-user-id');
+                const username = e.target.getAttribute('data-username');
+                showUserDevices(userId, username);
+              });
+            });
           }catch(e){}
+        }
+        
+        async function showUserDevices(userId, username){
+          try{
+            const res = await fetch('/admin/user/' + userId + '/devices', { headers: { 'Authorization': 'Bearer ' + getToken() }});
+            const data = await res.json();
+            if(!res.ok){ return; }
+            
+            userDevicesTitle.textContent = 'Устройства пользователя: ' + username;
+            let html = '<div style="margin-top: 12px;">';
+            if(data.devices && data.devices.length > 0){
+              data.devices.forEach(device => {
+                html += '<div style="border:1px solid #374151; border-radius:8px; padding:12px; margin-bottom:8px;">';
+                html += '<div style="font-weight:bold; color:#3b82f6;">IP: ' + device.ip + '</div>';
+                html += '<div style="font-size:12px; color:#94a3b8; margin:4px 0;">Статус: ' + (device.isOnline ? '🟢 Онлайн' : '⚪ Офлайн') + '</div>';
+                html += '<div style="font-size:12px; color:#94a3b8;">Последний вход: ' + new Date(device.lastSeen).toLocaleString() + '</div>';
+                if(device.users && device.users.length > 0){
+                  html += '<div style="margin-top:8px;"><strong>Пользователи на этом IP:</strong></div>';
+                  device.users.forEach(user => {
+                    html += '<div style="margin-left:12px; font-size:12px;">• ' + user.username + ' (' + (user.isOnline ? 'онлайн' : 'офлайн') + ')</div>';
+                  });
+                }
+                html += '<div style="margin-top:8px;"><button onclick="banIpFromDevice(\'' + device.ip + '\')" style="background:#ef4444; padding:4px 8px; font-size:12px;">Забанить этот IP</button></div>';
+                html += '</div>';
+              });
+            } else {
+              html += '<div style="color:#94a3b8;">Устройства не найдены</div>';
+            }
+            html += '</div>';
+            userDevicesContent.innerHTML = html;
+            userDevicesModal.classList.remove('hidden');
+          }catch(e){}
+        }
+        
+        function banIpFromDevice(ip){
+          document.getElementById('ipInput').value = ip;
+          userDevicesModal.classList.add('hidden');
         }
         document.getElementById('banBtn').onclick = async () => {
           actionMsg.textContent='';
@@ -858,7 +941,19 @@ app.get("/admin/bans", requireAdmin, async (req, res) => {
 // Список пользователей с последним IP
 app.get("/admin/users", requireAdmin, async (req, res) => {
   try {
-    const users = await User.find({}, "_id username fullName email lastSeen isOnline lastIp status isVerified").sort({ lastSeen: -1 }).lean();
+    const { search } = req.query;
+    let query = {};
+    if (search) {
+      query = {
+        $or: [
+          { username: { $regex: search, $options: 'i' } },
+          { fullName: { $regex: search, $options: 'i' } },
+          { email: { $regex: search, $options: 'i' } }
+        ]
+      };
+    }
+    
+    const users = await User.find(query, "_id username fullName email lastSeen isOnline lastIp status isVerified").sort({ lastSeen: -1 }).lean();
     const items = users.map(u => ({
       id: u._id.toString(),
       username: u.username,
@@ -873,6 +968,55 @@ app.get("/admin/users", requireAdmin, async (req, res) => {
     res.json({ items });
   } catch (e) {
     res.status(500).json({ error: "Ошибка получения пользователей" });
+  }
+});
+
+// Получить устройства/IP пользователя
+app.get("/admin/user/:userId/devices", requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = await User.findById(userId, "username fullName lastIp lastSeen").lean();
+    if (!user) {
+      return res.status(404).json({ error: "Пользователь не найден" });
+    }
+    
+    // Получаем все IP адреса этого пользователя из базы
+    const devices = await User.find(
+      { 
+        $or: [
+          { _id: userId },
+          { lastIp: user.lastIp }
+        ]
+      },
+      "username lastIp lastSeen isOnline"
+    ).lean();
+    
+    // Группируем по IP
+    const ipGroups = {};
+    devices.forEach(device => {
+      if (device.lastIp) {
+        if (!ipGroups[device.lastIp]) {
+          ipGroups[device.lastIp] = {
+            ip: device.lastIp,
+            users: [],
+            lastSeen: device.lastSeen,
+            isOnline: device.isOnline
+          };
+        }
+        ipGroups[device.lastIp].users.push({
+          username: device.username,
+          lastSeen: device.lastSeen,
+          isOnline: device.isOnline
+        });
+      }
+    });
+    
+    res.json({ 
+      user: { username: user.username, fullName: user.fullName },
+      devices: Object.values(ipGroups)
+    });
+  } catch (e) {
+    res.status(500).json({ error: "Ошибка получения устройств" });
   }
 });
 
@@ -952,27 +1096,6 @@ app.get("/api/health", async (req, res) => {
     res.status(500).json({ error: "Ошибка сервера" });
   }
 });
-
-// Endpoint для загрузки аватара
-app.post(
-  "/api/upload-avatar",
-  authenticateToken,
-  upload.single("avatar"),
-  async (req, res) => {
-    try {
-      if (!req.file) {
-        return res.status(400).json({ error: "Файл не загружен" });
-      }
-      const userId = req.user.userId;
-      const avatarUrl = `/avatars/${req.file.filename}`;
-      await User.findByIdAndUpdate(userId, { avatar: avatarUrl });
-      res.json({ success: true, avatar: avatarUrl });
-    } catch (error) {
-      console.error("upload-avatar error:", error);
-      res.status(500).json({ error: "Ошибка загрузки аватара" });
-    }
-  }
-);
 
 // Endpoint для создания группы/канала с аватаром
 app.post(
@@ -1337,12 +1460,21 @@ io.use(async (socket, next) => {
     const queryToken = socket.handshake.query && (socket.handshake.query.token || socket.handshake.query.auth || socket.handshake.query.jwt);
     const authToken = socket.handshake.auth && (socket.handshake.auth.token || socket.handshake.auth.jwt);
     const token = authToken || (hdrAuth ? String(hdrAuth).replace(/^Bearer\s+/i, '') : null) || (queryToken ? String(queryToken) : null);
-    console.log("🔌 Socket.IO подключение, токен:", token ? "есть" : "нет");
-
+    
+    // Check if it's UptimeRobot or similar monitoring service
+    const userAgent = socket.handshake.headers['user-agent'] || '';
+    const isMonitoringBot = /uptimerobot|pingdom|statuscake|monitor/i.test(userAgent);
+    
     if (!token) {
+      if (isMonitoringBot) {
+        // Silently reject monitoring bots without logging
+        return next(new Error("Unauthenticated"));
+      }
       console.log("❌ Socket.IO: токен отсутствует");
       return next(new Error("Токен аутентификации обязателен"));
     }
+    
+    console.log("🔌 Socket.IO подключение, токен:", token ? "есть" : "нет");
 
     jwt.verify(token, JWT_SECRET, async (err, decoded) => {
       if (err) {
@@ -2585,6 +2717,43 @@ app.post("/api/clear-global-chat", authenticateToken, async (req, res) => {
     res.status(500).json({ error: "Ошибка очистки общего чата" });
   }
 });
+
+// Endpoint для загрузки аватарки пользователя
+app.post(
+  "/api/upload-avatar",
+  authenticateToken,
+  upload.single("avatar"),
+  async (req, res) => {
+    try {
+      console.log("📷 Запрос на загрузку аватарки");
+      console.log("📷 Файл:", req.file);
+      console.log("📷 User:", req.user);
+
+      if (!req.file) {
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+        return res.status(400).json({ error: "Файл аватарки обязателен" });
+      }
+
+      const userId = req.user.userId;
+      const avatarUrl = `/avatars/${req.file.filename}`;
+
+      // Обновляем аватарку пользователя в базе данных
+      await User.findByIdAndUpdate(userId, { avatar: avatarUrl });
+
+      console.log(`📷 Аватарка загружена: ${req.user.username} -> ${avatarUrl}`);
+
+      res.json({
+        success: true,
+        avatarUrl: avatarUrl,
+      });
+
+    } catch (error) {
+      console.error("upload-avatar error:", error);
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.status(500).json({ error: "Ошибка загрузки аватарки" });
+    }
+  }
+);
 
 // Endpoint для загрузки изображения в чат
 app.post(
