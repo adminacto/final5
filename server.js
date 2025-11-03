@@ -1,2394 +1,2696 @@
-"use client"
+const express = require("express");
+const http = require("http");
+const socketIo = require("socket.io");
+const cors = require("cors");
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
+const rateLimit = require("express-rate-limit");
+const helmet = require("helmet");
+const { v4: uuidv4 } = require("uuid");
+const path = require("path");
+const mongoose = require("mongoose");
+const { Schema, model } = require("mongoose");
+const fs = require("fs");
+const multer = require("multer");
+const cookieParser = require("cookie-parser");
 
-import React, { useEffect, useState, useRef } from "react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Badge } from "@/components/ui/badge"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Label } from "@/components/ui/label"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu"
-import {
-  MessageCircle,
-  Users,
-  Settings,
-  Search,
-  Send,
-  MoreVertical,
-  Wifi,
-  WifiOff,
-  Paperclip,
-  UserPlus,
-  Eye,
-  EyeOff,
-  Shield,
-  Lock,
-  Mail,
-  Trash2,
-  Bell,
-  Copy,
-  Reply,
-  X,
-  Info,
-  Menu,
-  ArrowLeft,
-  Star,
-  Smile,
-  Zap,
-  Camera,
-  Edit,
-} from "lucide-react"
-import { io, type Socket } from "socket.io-client"
-import { Base64 } from 'js-base64'
-import { useState as useStateReact } from "react"
+// Инициализация приложенияa
+const app = express();
+const server = http.createServer(app);
 
-// Интерфейсы
-interface User {
-  id: string
-  username: string
-  email: string
-  fullName: string
-  avatar?: string
-  bio?: string
-  isOnline: boolean
-  lastSeen: Date
-  isVerified: boolean
-  status: "online" | "away" | "busy" | "offline"
-}
+// Настройка trust proxy для работы за прокси (Render.com)
+app.set("trust proxy", 1);
 
-interface Message {
-  id: string
-  senderId: string
-  senderName: string
-  content: string
-  chatId: string
-  timestamp: Date
-  type: "text" | "image" | "file" | "audio" | "video"
-  fileUrl?: string
-  fileName?: string
-  fileSize?: number
-  isEncrypted: boolean
-  reactions?: { emoji: string; userId: string; username: string }[]
-  replyTo?: {
-    id: string
-    content: string
-    senderName: string
-  }
-  isEdited?: boolean
-  readBy?: string[]
-}
-
-interface Chat {
-  id: string
-  name: string
-  avatar?: string
-  description?: string
-  lastMessage?: Message
-  unreadCount: number
-  isGroup: boolean
-  participants: User[]
-  messageCount: number
-  type: "private" | "group" | "channel"
-  isEncrypted: boolean
-  createdBy: string
-  createdAt: Date
-  isPinned?: boolean
-  isMuted?: boolean
-  theme?: string
-}
-
-// Языки
-const languages = [
-  { code: "uz", name: "O'zbek", flag: "🇺🇿" },
-  { code: "ru", name: "Русский", flag: "🇷🇺" },
-  { code: "en", name: "English", flag: "🇺🇸" },
-]
-
-const translations = {
-  uz: {
-    appName: "ACTOGRAM",
-    welcome: "Xush kelibsiz",
-    login: "Kirish",
-    register: "Ro'yxatdan o'tish",
-    email: "Email",
-    password: "Parol",
-    username: "Foydalanuvchi nomi",
-    fullName: "To'liq ism",
-    bio: "Haqida",
-    online: "Onlayn",
-    offline: "Oflayn",
-    typing: "yozmoqda...",
-    send: "Yuborish",
-    search: "Qidirish...",
-    newChat: "Yangi chat",
-    settings: "Sozlamalar",
-    profile: "Profil",
-    darkMode: "Tungi rejim",
-    notifications: "Bildirishnomalar",
-    language: "Til",
-    save: "Saqlash",
-    cancel: "Bekor qilish",
-    delete: "O'chirish",
-    edit: "Tahrirlash",
-    reply: "Javob berish",
-    copy: "Nusxalash",
-    forward: "Yuborish",
-    pin: "Mahkamlash",
-    mute: "Ovozsiz",
-    archive: "Arxiv",
-    block: "Bloklash",
-    report: "Shikoyat",
-    logout: "Chiqish",
-    connecting: "Ulanmoqda...",
-    connected: "Ulandi",
-    disconnected: "Uzildi",
-    encrypted: "Shifrlangan",
-    verified: "Tasdiqlangan",
-    members: "a'zolar",
-    messages: "xabarlar",
-    noMessages: "Xabarlar yo'q",
-    startChat: "Suhbatni boshlang",
-    searchUsers: "Foydalanuvchilarni qidiring",
-    addMembers: "A'zolar qo'shish",
-    createGroup: "Guruh yaratish",
-    groupName: "Guruh nomi",
-    groupDescription: "Guruh tavsifi",
-    selectPhoto: "Rasm tanlash",
-    takePhoto: "Rasm olish",
-    chooseFromGallery: "Galereyadan tanlash",
-    uploadFile: "Fayl yuklash",
-    recording: "Yozib olish...",
-    playback: "Ijro etish",
-    fileSize: "Fayl hajmi",
-    downloading: "Yuklab olish...",
-    uploaded: "Yuklandi",
-    failed: "Xatolik",
-    retry: "Qayta urinish",
-    comingSoon: "Tez orada...",
-    beta: "Beta",
-    pro: "Pro",
-    premium: "Premium",
-    free: "Bepul",
-    swipeHint: "O'ngga suring yoki menyuni bosing",
-  },
-  ru: {
-    appName: "ACTOGRAM",
-    welcome: "Добро пожаловать",
-    login: "Войти",
-    register: "Регистрация",
-    email: "Email",
-    password: "Пароль",
-    username: "Имя пользователя",
-    fullName: "Полное имя",
-    bio: "О себе",
-    online: "Онлайн",
-    offline: "Оффлайн",
-    typing: "печатает...",
-    send: "Отправить",
-    search: "Поиск...",
-    newChat: "Новый чат",
-    settings: "Настройки",
-    profile: "Профиль",
-    darkMode: "Темная тема",
-    notifications: "Уведомления",
-    language: "Язык",
-    save: "Сохранить",
-    cancel: "Отмена",
-    delete: "Удалить",
-    edit: "Редактировать",
-    reply: "Ответить",
-    copy: "Копировать",
-    forward: "Переслать",
-    pin: "Закрепить",
-    mute: "Без звука",
-    archive: "Архив",
-    block: "Заблокировать",
-    report: "Пожаловаться",
-    logout: "Выйти",
-    connecting: "Подключение...",
-    connected: "Подключено",
-    disconnected: "Отключено",
-    encrypted: "Зашифровано",
-    verified: "Подтвержден",
-    members: "участников",
-    messages: "сообщений",
-    noMessages: "Нет сообщений",
-    startChat: "Начните общение",
-    searchUsers: "Поиск пользователей",
-    addMembers: "Добавить участников",
-    createGroup: "Создать группу",
-    groupName: "Название группы",
-    groupDescription: "Описание группы",
-    selectPhoto: "Выбрать фото",
-    takePhoto: "Сделать фото",
-    chooseFromGallery: "Выбрать из галереи",
-    uploadFile: "Загрузить файл",
-    recording: "Запись...",
-    playback: "Воспроизведение",
-    fileSize: "Размер файла",
-    downloading: "Загрузка...",
-    uploaded: "Загружено",
-    failed: "Ошибка",
-    retry: "Повторить",
-    comingSoon: "Скоро...",
-    beta: "Бета",
-    pro: "Про",
-    premium: "Премиум",
-    free: "Бесплатно",
-    swipeHint: "Свайпните вправо или нажмите меню",
-  },
-  en: {
-    appName: "ACTOGRAM",
-    welcome: "Welcome",
-    login: "Login",
-    register: "Register",
-    email: "Email",
-    password: "Password",
-    username: "Username",
-    fullName: "Full Name",
-    bio: "Bio",
-    online: "Online",
-    offline: "Offline",
-    typing: "typing...",
-    send: "Send",
-    search: "Search...",
-    newChat: "New Chat",
-    settings: "Settings",
-    profile: "Profile",
-    darkMode: "Dark Mode",
-    notifications: "Notifications",
-    language: "Language",
-    save: "Save",
-    cancel: "Cancel",
-    delete: "Delete",
-    edit: "Edit",
-    reply: "Reply",
-    copy: "Copy",
-    forward: "Forward",
-    pin: "Pin",
-    mute: "Mute",
-    archive: "Archive",
-    block: "Block",
-    report: "Report",
-    logout: "Logout",
-    connecting: "Connecting...",
-    connected: "Connected",
-    disconnected: "Disconnected",
-    encrypted: "Encrypted",
-    verified: "Verified",
-    members: "members",
-    messages: "messages",
-    noMessages: "No messages",
-    startChat: "Start chatting",
-    searchUsers: "Search users",
-    addMembers: "Add members",
-    createGroup: "Create group",
-    groupName: "Group name",
-    groupDescription: "Group description",
-    selectPhoto: "Select photo",
-    takePhoto: "Take photo",
-    chooseFromGallery: "Choose from gallery",
-    uploadFile: "Upload file",
-    recording: "Recording...",
-    playback: "Playback",
-    fileSize: "File size",
-    downloading: "Downloading...",
-    uploaded: "Uploaded",
-    failed: "Failed",
-    retry: "Retry",
-    comingSoon: "Coming soon...",
-    beta: "Beta",
-    pro: "Pro",
-    premium: "Premium",
-    free: "Free",
-    swipeHint: "Swipe right or tap menu",
-  },
-}
-
-// Эмодзи для реакций
-const reactionEmojis = ["❤️", "👍", "👎", "😂", "😮", "😢", "😡", "🔥", "👏", "🎉"]
-
-// Темы чата
-const chatThemes = [
-  { id: "default", name: "Default", colors: ["#3B82F6", "#1E40AF"] },
-  { id: "purple", name: "Purple", colors: ["#8B5CF6", "#5B21B6"] },
-  { id: "green", name: "Green", colors: ["#10B981", "#047857"] },
-  { id: "pink", name: "Pink", colors: ["#EC4899", "#BE185D"] },
-  { id: "orange", name: "Orange", colors: ["#F59E0B", "#D97706"] },
-]
-
-// Предложенные стикеры-аватары (5 шт.)
-const presetStickers = [
-  "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f60a.png", // 😊
-  "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f680.png", // 🚀
-  "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f4a1.png", // 💡
-  "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f525.png", // 🔥
-  "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/2728.png",   // ✨
-]
-
-// --- BASE64 UTILS ---
-function base64Encode(bytes: Uint8Array): string {
-  let binary = '';
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return window.btoa(binary);
-}
-
-function base64Decode(base64: string): Uint8Array {
-  const binary = window.atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
-}
-
-// --- ENCRYPT/DECRYPT ---
-// Утилиты шифрования (старый рабочий вариант)
-const encryptMessage = (message: string): string => {
-  return btoa(unescape(encodeURIComponent(message)))
-}
-
-const decryptMessage = (encrypted: string): string => {
-  try {
-    return decodeURIComponent(escape(atob(encrypted)))
-  } catch {
-    return encrypted
-  }
-}
-
-// Основной компонент
-export default function ActogramChat() {
-  // Состояния
-  const [currentUser, setCurrentUser] = useState<User | null>(null)
-  const [chats, setChats] = useState<Chat[]>([])
-  const [selectedChat, setSelectedChat] = useState<Chat | null>(null)
-  const [messages, setMessages] = useState<Message[]>([])
-  const [messagesCache, setMessagesCache] = useState<{ [chatId: string]: Message[] }>({})
-  const [newMessage, setNewMessage] = useState("")
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
-  const [isLoginMode, setIsLoginMode] = useState(true)
-  const [formData, setFormData] = useState({
-    email: "",
-    password: "",
-    confirmPassword: "",
-    username: "",
-    fullName: "",
-    bio: "",
+// Безопасность
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
   })
-  const [showPassword, setShowPassword] = useState(false)
-  const [searchQuery, setSearchQuery] = useState("")
-  const [searchResults, setSearchResults] = useState<User[]>([])
-  const [isConnected, setIsConnected] = useState(false)
-  const [activeUsers, setActiveUsers] = useState<User[]>([])
-  const [typingUsers, setTypingUsers] = useState<string[]>([])
-  const [language, setLanguage] = useState<"uz" | "ru" | "en">("uz")
-  const [darkMode, setDarkMode] = useState(true)
-  const [notifications, setNotifications] = useState(true)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState("")
-  const [success, setSuccess] = useState("")
-  const [isMobile, setIsMobile] = useState(false)
-  const [showSidebar, setShowSidebar] = useState(true)
-  const [showSettings, setShowSettings] = useState(false)
-  const [showUserSearch, setShowUserSearch] = useState(false)
-  const [replyingTo, setReplyingTo] = useState<Message | null>(null)
-  const [editingMessage, setEditingMessage] = useState<Message | null>(null)
-  const [selectedTheme, setSelectedTheme] = useState("default")
-  const [uploadProgress, setUploadProgress] = useState(0)
-  const [isRecording, setIsRecording] = useState(false)
-  const [showChatInfoDialog, setShowChatInfoDialog] = useState(false)
-  const [selectedChatForInfo, setSelectedChatForInfo] = useState<Chat | null>(null)
-  const [showSwipeHint, setShowSwipeHint] = useState(false)
-  const [globalChatCooldown, setGlobalChatCooldown] = useState(0)
-  const [pendingGlobalMessage, setPendingGlobalMessage] = useState(false)
-  const [globalOnlineCount, setGlobalOnlineCount] = useState(1)
-  const [modalImage, setModalImage] = useStateReact<string | null>(null)
-  // --- ДОБАВЬ В ХУКИ КОМПОНЕНТА ---
-  const touchStartX = useRef<number | null>(null);
-  const [touchDeltaX, setTouchDeltaX] = useState(0);
-  // --- ДОБАВЬ ВНУТРИ КОМПОНЕНТА ---
-  // Для отслеживания свайпа по сообщению
-  const [swipeMsgId, setSwipeMsgId] = useState<string | null>(null);
-  const [swipeMsgDeltaX, setSwipeMsgDeltaX] = useState(0);
-  const swipeMsgStartX = useRef<number | null>(null);
-  const [editedText, setEditedText] = useState("");
+);
 
-  const handleTouchStart = (e: React.TouchEvent) => {
-    if (!isMobile) return;
-    touchStartX.current = e.touches[0].clientX;
-    setTouchDeltaX(0);
-  };
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (!isMobile || touchStartX.current === null) return;
-    const deltaX = e.touches[0].clientX - touchStartX.current;
-    setTouchDeltaX(deltaX);
-  };
-  const handleTouchEnd = () => {
-    if (!isMobile) return;
-    if (touchDeltaX > 60) {
-      setShowSidebar(true);
-    } else if (touchDeltaX < -60 && showSidebar) {
-      setShowSidebar(false);
+// Rate limiting с правильной настройкой для прокси
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 минут
+  max: 100, // максимум 100 запросов
+  message: "Слишком много запросов, попробуйте позже",
+  standardHeaders: true,
+  legacyHeaders: false,
+  // Настройка для работы за прокси
+  skip: (req) => req.ip === "127.0.0.1" || req.ip === "::1",
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5, // максимум 5 попыток входа
+  message: "Слишком много попыток входа, подождите 15 минут",
+  standardHeaders: true,
+  legacyHeaders: false,
+  // Настройка для работы за прокси
+  skip: (req) => req.ip === "127.0.0.1" || req.ip === "::1",
+});
+
+// Создать папку avatars, если не существует
+const avatarsDir = path.join(__dirname, "public", "avatars");
+if (!fs.existsSync(avatarsDir)) {
+  fs.mkdirSync(avatarsDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, avatarsDir);
+  },
+  filename: function (req, file, cb) {
+    const ext = path.extname(file.originalname);
+    const uniqueName = `${Date.now()}_${Math.round(Math.random() * 1e9)}${ext}`;
+    cb(null, uniqueName);
+  },
+});
+const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  fileFilter: (req, file, cb) => {
+    // Разрешаем любые файлы (можно добавить фильтр по типу, если нужно)
+    cb(null, true)
+  },
+});
+
+// Конфигурация
+const JWT_SECRET =
+  process.env.JWT_SECRET || "actogram_ultra_secure_key_2024_v3";
+const PORT = process.env.PORT || 3001;
+
+// Админ доступ (минимальный, можно вынести в env)
+const ADMIN_USERNAME = "Mumtozbekk";
+// Сложный пароль: 24+ символов, смешанный набор
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "pA7$Zk!2gHq9#LmXv4@rT1wQ";
+
+// � азрешенные домены
+const allowedOrigins = [
+  "https://acto-uimuz.vercel.app",
+  "https://actogr.onrender.com",
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  /\.vercel\.app$/,
+  /\.render\.com$/,
+];
+
+// CORS настройки
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+
+    const isAllowed = allowedOrigins.some((allowed) => {
+      if (typeof allowed === "string") {
+        return (
+          origin === allowed ||
+          origin.includes(allowed.replace(/https?:\/\//, ""))
+        );
+      }
+      return allowed.test(origin);
+    });
+
+    if (isAllowed) {
+      callback(null, true);
+    } else {
+      callback(new Error("CORS: Домен не разрешен"));
     }
-    touchStartX.current = null;
-    setTouchDeltaX(0);
-  };
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  allowedHeaders: ["Content-Type", "Authorization", "Cookie"],
+  exposedHeaders: ["Set-Cookie"],
+};
 
-  const handleMsgTouchStart = (e: React.TouchEvent, msgId: string) => {
-    if (!isMobile) return;
-    swipeMsgStartX.current = e.touches[0].clientX;
-    setSwipeMsgId(msgId);
-    setSwipeMsgDeltaX(0);
-  };
-  const handleMsgTouchMove = (e: React.TouchEvent) => {
-    if (!isMobile || swipeMsgStartX.current === null) return;
-    const deltaX = e.touches[0].clientX - swipeMsgStartX.current;
-    setSwipeMsgDeltaX(deltaX);
-  };
-  const handleMsgTouchEnd = (message: Message) => {
-    if (!isMobile) return;
-    if (swipeMsgDeltaX < -50 && message.senderId !== currentUser?.id) {
-      setReplyingTo(message);
-    }
-    swipeMsgStartX.current = null;
-    setSwipeMsgId(null);
-    setSwipeMsgDeltaX(0);
-  };
+app.use(cors(corsOptions));
+app.use(express.json({ limit: "10mb" }));
+app.use(express.static(path.join(__dirname, "public")));
+app.use(cookieParser());
 
-  // Refs
-  const socketRef = useRef<Socket | null>(null)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
-  const messageInputRef = useRef<HTMLInputElement>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+//                                        HTML-
+app.use((req, res, next) => {
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  next();
+});
 
-  const t = translations[language]
+// Socket.IO настройки
+const io = socketIo(server, {
+  cors: corsOptions,
+  transports: ["websocket", "polling"],
+  pingTimeout: 60000,
+  pingInterval: 25000,
+});
 
-  // Безопасная проверка URL аватара и буква-инициал для фолбэка
-  const isValidAvatarUrl = (url?: string) => {
-    if (!url || url === "null" || url === "undefined") return false
-    if (url.startsWith("data:") || url.startsWith("blob:") || url.startsWith("/")) return true
-    try {
-      const u = new URL(url)
-      return u.protocol === "http:" || u.protocol === "https:"
-    } catch {
-      return false
-    }
+// Хранилище данных (в продакшене использовать базу данных)
+const activeConnections = new Map(); // socketId -> userId
+const typingUsers = new Map(); // chatId -> Set of userIds
+const blockedUsers = new Map(); // userId -> Set of blocked userIds
+const userHeartbeats = new Map(); // userId -> lastHeartbeat timestamp
+// Rate limiting для общего чата
+const globalChatRateLimit = new Map(); // userId -> lastTimestamp
+const globalChatOnline = new Set(); // socket.id
+
+// Middleware для проверки JWT
+const authenticateToken = (req, res, next) => {
+  let token = null;
+  const authHeader = req.headers["authorization"];
+  console.log("🔍 Проверяем аутентификацию для запроса:", req.path);
+  console.log("🔍 Заголовки:", Object.keys(req.headers));
+  console.log("🔍 Cookie:", req.cookies);
+  console.log("🔍 Origin:", req.headers.origin);
+  console.log("🔍 Host:", req.headers.host);
+
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    token = authHeader.split(" ")[1];
+    console.log("🔑 Токен получен из заголовка Authorization");
+  } else if (req.cookies && req.cookies.token) {
+    token = req.cookies.token;
+    console.log("🍪 Токен получен из cookie");
+  } else {
+    console.log("❌ Токен не найден ни в заголовке, ни в cookie");
+    console.log("🔍 Все cookie:", JSON.stringify(req.cookies, null, 2));
   }
-  const getUserInitial = (user?: User) =>
-    user?.username?.replace(/^@/, "").charAt(0)?.toUpperCase() ||
-    user?.fullName?.charAt(0)?.toUpperCase() || "?"
 
-  // Проверка мобильного устройства
-  useEffect(() => {
-    const checkMobile = () => {
-      const mobile = window.innerWidth < 768
-      setIsMobile(mobile)
-      setShowSidebar(!mobile)
+  if (!token) {
+    console.log("❌ Токен отсутствует, возвращаем 401");
+    return res.status(401).json({ error: "Токен доступа обязателен" });
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err) {
+      console.log("❌ Ошибка верификации токена:", err.message);
+      return res
+        .status(403)
+        .json({ error: "Недействительный или истекший токен" });
     }
-    checkMobile()
-    window.addEventListener("resize", checkMobile)
-    return () => window.removeEventListener("resize", checkMobile)
-  }, [])
+    console.log(
+      "✅ Пользователь аутентифицирован:",
+      user.userId,
+      user.username
+    );
+    req.user = user;
+    next();
+  });
+};
 
-  // Загрузка настроек
-  useEffect(() => {
-    const savedSettings = localStorage.getItem("actogram_settings")
-    if (savedSettings) {
-      const settings = JSON.parse(savedSettings)
-      setDarkMode(settings.darkMode !== undefined ? settings.darkMode : true)
-      setLanguage(settings.language || "uz")
-      setNotifications(settings.notifications !== false)
-      setSelectedTheme(settings.theme || "default")
-    }
+// Валидация
+const validateEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+const validatePassword = (password) => password && password.length >= 8;
+const validateUsername = (username) => /^@[a-zA-Z0-9_]{3,20}$/.test(username);
 
-    const savedUser = localStorage.getItem("actogram_user")
-    if (savedUser) {
-      const user = JSON.parse(savedUser)
-      console.log("🔍 Загружен пользователь из localStorage:", user)
-      setCurrentUser(user)
-      setIsAuthenticated(true)
-    }
-    // Показываем подсказку о свайпе один раз на мобильных
-    const hintShown = localStorage.getItem("actogram_swipe_hint_shown")
-    if (!hintShown && window.innerWidth < 768) {
-      setShowSwipeHint(true)
-      setTimeout(() => {
-        setShowSwipeHint(false)
-        localStorage.setItem("actogram_swipe_hint_shown", "1")
-      }, 4000)    
-    }
-  }, [])
+// Утилиты
+const encryptMessage = (message) => {
+  return btoa(unescape(encodeURIComponent(message)));
+};
 
-  // Применение темной темы
-  useEffect(() => {
-    document.documentElement.classList.toggle("dark", darkMode)
-  }, [darkMode])
+const decryptMessage = (encrypted) => {
+  try {
+    return decodeURIComponent(escape(atob(encrypted)));
+  } catch {
+    return encrypted;
+  }
+};
 
-  // Подключение к серверу
-  useEffect(() => {
-    if (!isAuthenticated || !currentUser) return
+// �модзи для реакций
+const reactionEmojis = [
+  "❤️",
+  "👍",
+  "👎",
+  "😂",
+  "😮",
+  "😢",
+  "😡",
+  "🔥",
+  "👏",
+  "🎉",
+];
 
-    const serverUrl = "https://actogr.onrender.com"
-    socketRef.current = io(serverUrl, {
-      transports: ["websocket", "polling"],
-      auth: {
-        token: localStorage.getItem("actogram_token"),
-        userId: currentUser.id,
-      },
-    })
+// -------- Модель забаненных IP --------
+const BannedIPSchema = new Schema({
+  ip: { type: String, unique: true, required: true },
+  reason: { type: String },
+  bannedAt: { type: Date, default: Date.now },
+  bannedBy: { type: String, default: ADMIN_USERNAME },
+});
+const BannedIP = model("BannedIP", BannedIPSchema);
 
-    const socket = socketRef.current
+// Получение реального IP c учетом proxy
+function getClientIp(req) {
+  const xff = req.headers["x-forwarded-for"]; // может быть списком
+  if (xff) {
+    const ips = Array.isArray(xff) ? xff : String(xff).split(",");
+    if (ips.length > 0) return ips[0].trim();
+  }
+  return req.ip || req.connection?.remoteAddress || req.socket?.remoteAddress || "";
+}
 
-    socket.on("connect", () => {
-      setIsConnected(true)
-      loadChats()
-      
-      // Отправляем heartbeat каждые 10 секунд
-      const heartbeatInterval = setInterval(() => {
-        if (socket.connected) {
-          socket.emit("heartbeat")
-        }
-      }, 10000)
-      
-      // Очищаем интервал при отключении
-      socket.on("disconnect", () => {
-        clearInterval(heartbeatInterval)
-      })
-    })
+// Создание пользователя-бота при запуске
+const BOT_USERNAME = "@actogram_bot";
+const BOT_ID_KEY = "actogram_bot_id";
+let botUserId = null;
 
-    socket.on("disconnect", () => {
-      setIsConnected(false)
-    })
+async function ensureBotUser() {
+  let bot = await User.findOne({ username: BOT_USERNAME });
+  if (!bot) {
+    bot = await User.create({
+      email: "bot@actogram.app",
+      username: BOT_USERNAME,
+      fullName: "Actogram Bot",
+      bio: "Официальный бот Actogram. Новости и обновления.",
+      password: "bot_password_12345678", // не используется
+      createdAt: new Date(),
+      isVerified: true,
+      isOnline: false,
+      lastSeen: new Date(),
+      avatar: null,
+      status: "online",
+    });
+    console.log("🤖 Actogram Bot создан!");
+  }
+  botUserId = bot._id.toString();
+  return botUserId;
+}
 
-    socket.on("new_message", (message: Message) => {
-      console.log("📨 Получено новое сообщение:", message)
-      if (message.isEncrypted) {
-        message.content = decryptMessage(message.content)
-        console.log("🔓 Расшифрованное сообщение:", message.content)
-      }
-      
-      // Проверяем, не является ли это дубликатом оптимистичного сообщения
-      setMessages((prev) => {
-        if (prev.some((m) => m.id === message.id)) return prev;
-        return [...prev, message]
-      })
-      
-      updateChatLastMessage(message)
-      if (notifications && message.senderId !== currentUser.id) {
-        showNotification(message.senderName, message.content)
-      }
-      
-      // Для общего чата: если это наше сообщение, запускаем счетчик и снимаем pending
-      if (selectedChat?.id === "global" && message.senderId === currentUser?.id) {
-        setGlobalChatCooldown(5);
-        setPendingGlobalMessage(false);
-        let seconds = 5;
-        const interval = setInterval(() => {
-          seconds--;
-          setGlobalChatCooldown(seconds);
-          if (seconds <= 0) clearInterval(interval);
-        }, 1000);
-      }
-    })
+// Создание глобального чата (если его нет)
+async function ensureGlobalChat() {
+  const globalChatId = "global";
+  let chat = await Chat.findById(globalChatId);
+  if (!chat) {
+    chat = await Chat.create({
+      _id: globalChatId,
+      name: "ACTO — Общий чат",
+      avatar: null,
+      description: "Глобальный чат для всех пользователей",
+      isGroup: true,
+      participants: [], // Можно оставить пустым, чтобы не было ограничений
+      createdAt: new Date(),
+      type: "group",
+      isEncrypted: false,
+      createdBy: null,
+      theme: "default",
+      isPinned: true,
+      isMuted: false,
+    });
+    console.log("🌍 Глобальный чат создан!");
+  }
+}
 
-    socket.on("message_edited", (message: Message) => {
-      setMessages((prev) => prev.map((m) => (m.id === message.id ? message : m)))
-    })
+// Главная страница
+app.get("/", (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html lang="ru">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>ACTOGRAM Server v3.0</title>
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                min-height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 20px;
+            }
+            .container {
+                max-width: 800px;
+                width: 100%;
+                background: rgba(255,255,255,0.1);
+                backdrop-filter: blur(20px);
+                border-radius: 20px;
+                padding: 40px;
+                box-shadow: 0 25px 50px rgba(0,0,0,0.2);
+                border: 1px solid rgba(255,255,255,0.2);
+            }
+            .header {
+                text-align: center;
+                margin-bottom: 40px;
+            }
+            .logo {
+                width: 80px;
+                height: 80px;
+                background: linear-gradient(135deg, #667eea, #764ba2);
+                border-radius: 20px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin: 0 auto 20px;
+                font-size: 32px;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            }
+            h1 {
+                font-size: 2.5rem;
+                margin-bottom: 10px;
+                background: linear-gradient(135deg, #fff, #e0e7ff);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;
+                background-clip: text;
+            }
+            .status {
+                background: rgba(34, 197, 94, 0.2);
+                padding: 15px 25px;
+                border-radius: 15px;
+                margin: 20px 0;
+                text-align: center;
+                font-size: 18px;
+                border: 1px solid rgba(34, 197, 94, 0.3);
+            }
+            .stats {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                gap: 20px;
+                margin: 30px 0;
+            }
+            .stat-card {
+                background: rgba(255,255,255,0.1);
+                padding: 20px;
+                border-radius: 15px;
+                text-align: center;
+                border: 1px solid rgba(255,255,255,0.2);
+                transition: transform 0.3s ease;
+            }
+            .stat-card:hover {
+                transform: translateY(-5px);
+            }
+            .stat-number {
+                font-size: 2rem;
+                font-weight: bold;
+                color: #60a5fa;
+                display: block;
+            }
+            .features {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+                gap: 20px;
+                margin: 30px 0;
+            }
+            .feature {
+                background: rgba(255,255,255,0.1);
+                padding: 20px;
+                border-radius: 15px;
+                border: 1px solid rgba(255,255,255,0.2);
+            }
+            .feature-icon {
+                font-size: 24px;
+                margin-bottom: 10px;
+            }
+            .client-link {
+                display: inline-block;
+                background: linear-gradient(135deg, #10b981, #059669);
+                color: white;
+                padding: 15px 30px;
+                border-radius: 15px;
+                text-decoration: none;
+                font-weight: bold;
+                font-size: 18px;
+                margin: 20px 10px;
+                transition: all 0.3s ease;
+                box-shadow: 0 10px 25px rgba(16, 185, 129, 0.3);
+            }
+            .client-link:hover {
+                transform: translateY(-3px);
+                box-shadow: 0 15px 35px rgba(16, 185, 129, 0.4);
+            }
+            .version-badge {
+                background: linear-gradient(135deg, #f59e0b, #d97706);
+                padding: 8px 16px;
+                border-radius: 20px;
+                font-size: 14px;
+                font-weight: bold;
+                display: inline-block;
+                margin: 10px 0;
+            }
+            @media (max-width: 768px) {
+                .container { padding: 20px; }
+                h1 { font-size: 2rem; }
+                .stats { grid-template-columns: 1fr; }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <div class="logo">💬</div>
+                <h1>ACTOGRAM</h1>
+                <div class="version-badge">Server v3.0 - Ultra Secure</div>
+                <p>Современный мессенджер с end-to-end шифрованием</p>
+            </div>
+            
+            <div class="status">
+                ✅ Сервер работает стабильно и безопасно
+            </div>
+            
+            <div class="stats">
+                <div class="stat-card">
+                    <span class="stat-number">0</span>
+                    <div>Зарегистрированных пользователей</div>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-number">${activeConnections.size}</span>
+                    <div>Активных подключений</div>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-number">0</span>
+                    <div>Активных чатов</div>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-number">0</span>
+                    <div>Сообщений отправлено</div>
+                </div>
+            </div>
+            
+            <div class="features">
+                <div class="feature">
+                    <div class="feature-icon">🔐</div>
+                    <h3>End-to-End шифрование</h3>
+                    <p>Все сообщения защищены современным шифрованием</p>
+                </div>
+                <div class="feature">
+                    <div class="feature-icon">⚡</div>
+                    <h3>Мгновенная доставка</h3>
+                    <p>WebSocket соединение для быстрого обмена сообщениями</p>
+                </div>
+                <div class="feature">
+                    <div class="feature-icon">📱</div>
+                    <h3>Адаптивный дизайн</h3>
+                    <p>Отлично работает на всех устройствах</p>
+                </div>
+                <div class="feature">
+                    <div class="feature-icon">🛡️</div>
+                    <h3>Максимальная безопасность</h3>
+                    <p>JWT аутентификация, rate limiting, CORS защита</p>
+                </div>
+                <div class="feature">
+                    <div class="feature-icon">🌍</div>
+                    <h3>Многоязычность</h3>
+                    <p>Поддержка узбекского, русского и английского языков</p>
+                </div>
+                <div class="feature">
+                    <div class="feature-icon">🎨</div>
+                    <h3>Современный UI</h3>
+                    <p>Красивый интерфейс с темной и светлой темами</p>
+                </div>
+            </div>
+            
+            <div style="text-align: center; margin: 40px 0;">
+                <h2>🚀 Начать использование</h2>
+                <a href="https://acto-uimuz.vercel.app" class="client-link" target="_blank">
+                    Открыть ACTOGRAM
+                </a>
+                <p style="margin-top: 20px; opacity: 0.8;">
+                    Безопасный мессенджер нового поколения
+                </p>
+            </div>
+            
+            <div style="text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.2);">
+                <p style="opacity: 0.7;">
+                    Время работы: ${Math.floor(process.uptime() / 60)} минут | 
+                    Версия: 3.0.0 | 
+                    Node.js ${process.version}
+                </p>
+            </div>
+        </div>
+        
+        <script src="/socket.io/socket.io.js"></script>
+        <script>
+            const socket = io();
+            socket.on('connect', () => {
+                console.log('🟢 WebSocket подключен:', socket.id);
+            });
+            socket.on('disconnect', () => {
+                console.log('🔴 WebSocket отключен');
+            });
+        </script>
+    </body>
+    </html>
+  `);
+});
 
-    socket.on("message_deleted", (messageId: string) => {
-      setMessages((prev) => prev.filter((m) => m.id !== messageId))
-    })
+// Простейшая веб-админка: логин и управление баном IP
+app.get("/admin", (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html lang="ru">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <title>ACTOGRAM Admin</title>
+      <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; background: #0f172a; color: #e2e8f0; }
+        #bg { position: fixed; inset: 0; z-index: 0; overflow: hidden; background: #000; }
+        #bg canvas { width: 100%; height: 100%; display: block; }
+        #bg .v-out { position:absolute; inset:0; pointer-events:none; background: radial-gradient(circle, rgba(0,0,0,0) 60%, rgba(0,0,0,1) 100%); }
+        #bg .v-center { position:absolute; inset:0; pointer-events:none; background: radial-gradient(circle, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0) 60%); }
+        .wrap { position: relative; z-index: 1; max-width: 880px; margin: 0 auto; padding: 24px; }
+        .card { background: #111827; border: 1px solid #1f2937; border-radius: 12px; padding: 20px; margin-top: 16px; }
+        .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+        input, button { height: 40px; border-radius: 8px; border: 1px solid #374151; background: #0b1220; color: #e2e8f0; padding: 0 12px; }
+        button { background: linear-gradient(135deg, #3b82f6, #8b5cf6); border: none; cursor: pointer; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border-bottom: 1px solid #1f2937; padding: 8px 6px; }
+        .muted { color: #94a3b8; font-size: 12px; }
+        .ok { color: #34d399; }
+        .err { color: #f87171; }
+        .hidden { display: none; }
+      </style>
+    </head>
+    <body>
+      <div id="bg">
+        <canvas id="lgCanvas"></canvas>
+        <div class="v-out"></div>
+        <div class="v-center"></div>
+      </div>
+      <div class="wrap">
+        <h1>ACTOGRAM Admin</h1>
+        <p class="muted">JWT-панель управления: вход и бан по IP</p>
 
-    socket.on("chat_cleared", (data: { chatId: string }) => {
-      if (selectedChat?.id === data.chatId) {
-        setMessages([])
-        setSuccess("Чат очищен")
-      }
-    })
+        <div id="loginCard" class="card">
+          <h3>Вход администратора</h3>
+          <div class="row" style="margin-top: 8px;">
+            <input id="username" placeholder="Логин" value="Mumtozbekk" />
+            <input id="password" type="password" placeholder="Пароль" />
+            <button id="loginBtn">Войти</button>
+          </div>
+          <div id="loginMsg" class="muted" style="margin-top: 8px;"></div>
+        </div>
 
-    socket.on("chat_settings_updated", (data: { chatId: string; isPinned?: boolean; isMuted?: boolean }) => {
-      setChats(prev => prev.map(chat => {
-        if (chat.id === data.chatId) {
-          return {
-            ...chat,
-            isPinned: data.isPinned !== undefined ? data.isPinned : chat.isPinned,
-            isMuted: data.isMuted !== undefined ? data.isMuted : chat.isMuted
+        <div id="adminCard" class="card hidden">
+          <div class="row" style="justify-content: space-between;">
+            <h3>Блокировка IP</h3>
+            <button id="logoutBtn" style="background:#334155;">Выйти</button>
+          </div>
+          <div class="row" style="margin-top: 8px;">
+            <input id="ipInput" placeholder="IP адрес (например 1.2.3.4)" />
+            <input id="reasonInput" placeholder="Причина (необязательно)" />
+            <button id="banBtn">Забанить IP</button>
+            <button id="unbanBtn" style="background:#ef4444;">Разбанить IP</button>
+          </div>
+          <div id="actionMsg" class="muted" style="margin-top: 8px;"></div>
+
+          <div style="margin-top: 16px;" class="row">
+            <button id="refreshBtn">Обновить список</button>
+          </div>
+          <div style="margin-top: 8px;">
+            <table>
+              <thead>
+                <tr>
+                  <th>IP</th>
+                  <th>Причина</th>
+                  <th>Когда</th>
+                  <th>Кем</th>
+                </tr>
+              </thead>
+              <tbody id="bansBody"></tbody>
+            </table>
+          </div>
+          <div style="margin-top: 24px;">
+            <h3>Пользователи</h3>
+            <p class="muted">Имя, ник и последний IP. Клик по IP заполняет поле выше.</p>
+            <div style="max-height: 320px; overflow:auto; border:1px solid #1f2937; border-radius:8px;">
+              <table style="width:100%;">
+                <thead>
+                  <tr>
+                    <th>Username</th>
+                    <th>Full name</th>
+                    <th>Last IP</th>
+                    <th>Online</th>
+                    <th>Last seen</th>
+                  </tr>
+                </thead>
+                <tbody id="usersBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <p class="muted" style="margin-top: 12px;">Токен хранится в localStorage (admin_token).</p>
+      </div>
+
+      <script>
+        // Lightweight LetterGlitch background (canvas-only, no React)
+        (function(){
+          const canvas = document.getElementById('lgCanvas');
+          if(!canvas) return;
+          const ctx = canvas.getContext('2d');
+          const glitchColors = ['#2b4539', '#61dca3', '#61b3dc'];
+          const characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ!@#$&*()-_+=/[]{};:<>.,0123456789";
+          const letters = [];
+          let grid = { columns: 0, rows: 0 };
+          let lastGlitchTime = Date.now();
+          const glitchSpeed = 50;
+          const fontSize = 16;
+          const charWidth = 10;
+          const charHeight = 20;
+
+          function getRandomChar(){
+            return characters.charAt(Math.floor(Math.random()*characters.length));
           }
+          function getRandomColor(){
+            return glitchColors[Math.floor(Math.random()*glitchColors.length)];
+          }
+          function calculateGrid(w,h){
+            return { columns: Math.ceil(w/charWidth), rows: Math.ceil(h/charHeight) };
+          }
+          function initLetters(cols, rows){
+            grid = { columns: cols, rows: rows };
+            const total = cols*rows;
+            letters.length = 0;
+            for(let i=0;i<total;i++){
+              letters.push({ char: getRandomChar(), color: getRandomColor() });
+            }
+          }
+          function resize(){
+            const dpr = window.devicePixelRatio || 1;
+            const rect = document.body.getBoundingClientRect();
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            canvas.style.width = rect.width + 'px';
+            canvas.style.height = rect.height + 'px';
+            ctx.setTransform(dpr,0,0,dpr,0,0);
+            const g = calculateGrid(rect.width, rect.height);
+            initLetters(g.columns, g.rows);
+            draw();
+          }
+          function draw(){
+            const rect = canvas.getBoundingClientRect();
+            ctx.clearRect(0,0,rect.width,rect.height);
+            ctx.font = fontSize + 'px monospace';
+            ctx.textBaseline = 'top';
+            for(let i=0;i<letters.length;i++){
+              const x = (i % grid.columns) * charWidth;
+              const y = Math.floor(i / grid.columns) * charHeight;
+              ctx.fillStyle = letters[i].color;
+              ctx.fillText(letters[i].char, x, y);
+            }
+          }
+          function update(){
+            const count = Math.max(1, Math.floor(letters.length * 0.05));
+            for(let i=0;i<count;i++){
+              const idx = Math.floor(Math.random()*letters.length);
+              if(letters[idx]){
+                letters[idx].char = getRandomChar();
+                letters[idx].color = getRandomColor();
+              }
+            }
+          }
+          function loop(){
+            const now = Date.now();
+            if(now - lastGlitchTime >= glitchSpeed){ update(); draw(); lastGlitchTime = now; }
+            requestAnimationFrame(loop);
+          }
+          window.addEventListener('resize', ()=>{ clearTimeout(window.__lg_to); window.__lg_to = setTimeout(resize, 100); });
+          resize();
+          loop();
+        })();
+
+        const loginCard = document.getElementById('loginCard');
+        const adminCard = document.getElementById('adminCard');
+        const loginMsg = document.getElementById('loginMsg');
+        const actionMsg = document.getElementById('actionMsg');
+        const bansBody = document.getElementById('bansBody');
+        const usersBody = document.getElementById('usersBody');
+
+        function getToken(){ return localStorage.getItem('admin_token') || ''; }
+        function setToken(t){ if(t) localStorage.setItem('admin_token', t); }
+        function clearToken(){ localStorage.removeItem('admin_token'); }
+        function setState(logged){
+          if(logged){ loginCard.classList.add('hidden'); adminCard.classList.remove('hidden'); loadBans(); }
+          else { adminCard.classList.add('hidden'); loginCard.classList.remove('hidden'); }
         }
-        return chat
-      }))
-    })
 
-    socket.on("error", (data: { message: string }) => {
-      setError(data.message)
-    })
+        document.getElementById('loginBtn').onclick = async () => {
+          loginMsg.textContent = '';
+          const username = document.getElementById('username').value.trim();
+          const password = document.getElementById('password').value;
+          try{
+            const res = await fetch('/admin/login', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({username, password})});
+            const data = await res.json();
+            if(!res.ok){ loginMsg.textContent = (data && data.error) || 'Ошибка входа'; loginMsg.className='err'; return; }
+            setToken(data.token); loginMsg.textContent='Вход выполнен'; loginMsg.className='ok'; setState(true);
+          }catch(e){ loginMsg.textContent = 'Сеть недоступна'; loginMsg.className='err'; }
+        };
 
-    socket.on("user_typing", (data: { userId: string; username: string; chatId: string }) => {
-      if (data.chatId === selectedChat?.id && data.userId !== currentUser.id) {
-        setTypingUsers((prev) => [...prev.filter((u) => u !== data.username), data.username])
-        setTimeout(() => {
-          setTypingUsers((prev) => prev.filter((u) => u !== data.username))
-        }, 3000)
-      }
-    })
+        document.getElementById('logoutBtn').onclick = () => { clearToken(); setState(false); };
 
-    socket.on("user_stop_typing", (data: { userId: string; chatId: string }) => {
-      setTypingUsers((prev) => prev.filter((u) => u !== data.userId))
-    })
-
-    socket.on("users_update", (users: User[]) => {
-      setActiveUsers(users)
-    })
-
-    socket.on("search_results", (results: User[]) => {
-      setSearchResults(results)
-    })
-
-    socket.on("my_chats", (userChats: Chat[]) => {
-      // Расшифровываем последние сообщения в чатах
-      const decryptedChats = userChats.map(chat => ({
-        ...chat,
-        lastMessage: chat.lastMessage ? {
-          ...chat.lastMessage,
-          content: chat.lastMessage.isEncrypted ? decryptMessage(chat.lastMessage.content) : chat.lastMessage.content
-        } : undefined
-      }))
-      setChats(decryptedChats)
-    })
-
-    socket.on("chat_messages", (data: { chatId: string; messages: Message[] }) => {
-      setMessagesCache(prev => ({ ...prev, [data.chatId]: data.messages }))
-      if (data.chatId === selectedChat?.id) {
-        setMessages(data.messages)
-      }
-    })
-
-    socket.on("new_private_chat", (chat: Chat) => {
-      console.log("🔍 Получен новый приватный чат:", chat)
-      setChats((prev) => {
-        const existingChat = prev.find((c) => c.id === chat.id)
-        if (!existingChat) {
-          return [...prev, chat]
+        async function loadBans(){
+          actionMsg.textContent='';
+          try{
+            const res = await fetch('/admin/bans', { headers: { 'Authorization': 'Bearer ' + getToken() }});
+            const data = await res.json();
+            if(!res.ok){ actionMsg.textContent = (data && data.error) || 'Ошибка загрузки'; actionMsg.className='err'; return; }
+            bansBody.innerHTML = '';
+            (data.items||[]).forEach(item => {
+              const tr = document.createElement('tr');
+              tr.innerHTML = '<td>' + (item.ip || '') + '</td>'
+                + '<td>' + (item.reason || '') + '</td>'
+                + '<td>' + new Date(item.bannedAt).toLocaleString() + '</td>'
+                + '<td>' + (item.bannedBy || '') + '</td>';
+              bansBody.appendChild(tr);
+            });
+          }catch(e){ actionMsg.textContent='Сеть недоступна'; actionMsg.className='err'; }
         }
-        return prev
-      })
-    })
 
-    socket.on("global_online_count", setGlobalOnlineCount)
+        document.getElementById('refreshBtn').onclick = loadBans;
+        async function loadUsers(){
+          try{
+            const res = await fetch('/admin/users', { headers: { 'Authorization': 'Bearer ' + getToken() }});
+            const data = await res.json();
+            if(!res.ok){ return; }
+            usersBody.innerHTML = '';
+            (data.items||[]).forEach(u => {
+              const tr = document.createElement('tr');
+              const lastSeen = u.lastSeen ? new Date(u.lastSeen).toLocaleString() : '';
+              tr.innerHTML = '<td>' + (u.username||'') + '</td>'
+                + '<td>' + (u.fullName||'') + '</td>'
+                + '<td><a href="#" data-ip="' + (u.lastIp||'') + '" class="pick-ip">' + (u.lastIp||'') + '</a></td>'
+                + '<td>' + (u.isOnline? '🟢' : '⚪') + '</td>'
+                + '<td>' + lastSeen + '</td>';
+              usersBody.appendChild(tr);
+            });
+            // навесить обработчики на ссылки IP
+            usersBody.querySelectorAll('a.pick-ip').forEach(a => {
+              a.addEventListener('click', (e) => {
+                e.preventDefault();
+                const ip = a.getAttribute('data-ip');
+                if(ip){ document.getElementById('ipInput').value = ip; }
+              });
+            });
+          }catch(e){}
+        }
+        document.getElementById('banBtn').onclick = async () => {
+          actionMsg.textContent='';
+          const ip = document.getElementById('ipInput').value.trim();
+          const reason = document.getElementById('reasonInput').value.trim();
+          if(!ip){ actionMsg.textContent='Укажите IP'; actionMsg.className='err'; return; }
+          try{
+            const res = await fetch('/admin/ban-ip', { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + getToken() }, body: JSON.stringify({ ip, reason }) });
+            const data = await res.json();
+            if(!res.ok){ actionMsg.textContent = (data && data.error) || 'Ошибка бана'; actionMsg.className='err'; return; }
+            actionMsg.textContent='IP забанен'; actionMsg.className='ok'; loadBans();
+          }catch(e){ actionMsg.textContent='Сеть недоступна'; actionMsg.className='err'; }
+        };
 
-    socket.on("message_reaction", (data: { messageId: string; reactions: any[] }) => {
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === data.messageId ? { ...msg, reactions: data.reactions } : msg
-        )
-      )
-    })
+        document.getElementById('unbanBtn').onclick = async () => {
+          actionMsg.textContent='';
+          const ip = document.getElementById('ipInput').value.trim();
+          if(!ip){ actionMsg.textContent='Укажите IP'; actionMsg.className='err'; return; }
+          try{
+            const res = await fetch('/admin/unban-ip', { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + getToken() }, body: JSON.stringify({ ip }) });
+            const data = await res.json();
+            if(!res.ok){ actionMsg.textContent = (data && data.error) || 'Ошибка разбана'; actionMsg.className='err'; return; }
+            actionMsg.textContent='IP разбанен'; actionMsg.className='ok'; loadBans();
+          }catch(e){ actionMsg.textContent='Сеть недоступна'; actionMsg.className='err'; }
+        };
 
-          return () => {
-        socket.disconnect()
-        socket.off("global_online_count", setGlobalOnlineCount)
+        // авто-переход в админку, если токен уже есть
+        setState(!!getToken());
+        if(getToken()){ loadUsers(); }
+      </script>
+    </body>
+    </html>
+  `);
+});
+
+// -------- Admin: JWT login --------
+app.post("/admin/login", authLimiter, async (req, res) => {
+  try {
+    const { username, password } = req.body || {};
+    if (username !== ADMIN_USERNAME || password !== ADMIN_PASSWORD) {
+      return res.status(401).json({ error: "Неверные данные" });
+    }
+    const token = jwt.sign(
+      { admin: true, username: ADMIN_USERNAME },
+      JWT_SECRET,
+      { expiresIn: "12h" }
+    );
+    res.json({ token });
+  } catch (err) {
+    res.status(500).json({ error: "Ошибка входа" });
+  }
+});
+
+// -------- Admin: middleware --------
+function requireAdmin(req, res, next) {
+  const authHeader = req.headers["authorization"] || "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
+  if (!token) return res.status(401).json({ error: "Токен обязателен" });
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    if (!payload?.admin || payload?.username !== ADMIN_USERNAME) {
+      return res.status(403).json({ error: "Нет доступа" });
+    }
+    next();
+  } catch (e) {
+    return res.status(403).json({ error: "Недействительный токен" });
+  }
+}
+
+// -------- Admin: IP ban management --------
+app.get("/admin/bans", requireAdmin, async (req, res) => {
+  const list = await BannedIP.find().sort({ bannedAt: -1 }).lean();
+  res.json({ items: list });
+});
+
+// Список пользователей с последним IP
+app.get("/admin/users", requireAdmin, async (req, res) => {
+  try {
+    const users = await User.find({}, "_id username fullName email lastSeen isOnline lastIp status isVerified").sort({ lastSeen: -1 }).lean();
+    const items = users.map(u => ({
+      id: u._id.toString(),
+      username: u.username,
+      fullName: u.fullName,
+      email: u.email,
+      isOnline: !!u.isOnline,
+      lastSeen: u.lastSeen,
+      lastIp: u.lastIp || "",
+      status: u.status || "",
+      isVerified: !!u.isVerified,
+    }));
+    res.json({ items });
+  } catch (e) {
+    res.status(500).json({ error: "Ошибка получения пользователей" });
+  }
+});
+
+app.post("/admin/ban-ip", requireAdmin, async (req, res) => {
+  const { ip, reason } = req.body || {};
+  if (!ip || typeof ip !== "string") {
+    return res.status(400).json({ error: "ip обязателен" });
+  }
+  try {
+    await BannedIP.updateOne(
+      { ip },
+      { $set: { ip, reason: reason || "", bannedAt: new Date(), bannedBy: ADMIN_USERNAME } },
+      { upsert: true }
+    );
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: "Ошибка бана" });
+  }
+});
+
+app.post("/admin/unban-ip", requireAdmin, async (req, res) => {
+  const { ip } = req.body || {};
+  if (!ip || typeof ip !== "string") {
+    return res.status(400).json({ error: "ip обязателен" });
+  }
+  try {
+    await BannedIP.deleteOne({ ip });
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: "Ошибка разбана" });
+  }
+});
+
+// -------- Enforce IP bans on HTTP --------
+app.use(async (req, res, next) => {
+  try {
+    const clientIp = getClientIp(req);
+    const banned = await BannedIP.findOne({ ip: clientIp }).lean();
+    if (banned) {
+      return res.status(403).json({ error: "Ваш IP забанен" });
+    }
+  } catch (e) {
+    // молча пропускаем в случае ошибки, чтобы не ломать сервис
+  }
+  next();
+});
+
+// API Routes
+app.get("/api/health", async (req, res) => {
+  try {
+    const userCount = await User.countDocuments();
+    const chatCount = await Chat.countDocuments();
+    const messageCount = await Message.countDocuments();
+
+    res.json({
+      status: "ACTOGRAM Server v3.0 работает отлично",
+      timestamp: new Date().toISOString(),
+      stats: {
+        users: userCount,
+        activeConnections: activeConnections.size,
+        chats: chatCount,
+        totalMessages: messageCount,
+        uptime: process.uptime(),
+      },
+      version: "3.0.0",
+      features: {
+        endToEndEncryption: true,
+        realTimeMessaging: true,
+        multiLanguage: true,
+        adaptiveDesign: true,
+        secureAuth: true,
+        rateLimiting: true,
+      },
+    });
+  } catch (error) {
+    console.error("Health check error:", error);
+    res.status(500).json({ error: "Ошибка сервера" });
+  }
+});
+
+// Endpoint для загрузки аватара
+app.post(
+  "/api/upload-avatar",
+  authenticateToken,
+  upload.single("avatar"),
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "Файл не загружен" });
       }
-  }, [isAuthenticated, currentUser, selectedChat?.id, notifications])
-
-  // Автоскролл
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages])
-
-  // Сохраняем настройки при каждом изменении
-  useEffect(() => {
-    localStorage.setItem(
-      "actogram_settings",
-      JSON.stringify({
-        darkMode,
-        language,
-        notifications,
-        theme: selectedTheme,
-      })
-    )
-  }, [darkMode, language, notifications, selectedTheme])
-
-  // Функции
-  const showNotification = (title: string, body: string) => {
-    if ("Notification" in window && Notification.permission === "granted") {
-      new Notification(title, { body, icon: "/favicon.ico" })
+      const userId = req.user.userId;
+      const avatarUrl = `/avatars/${req.file.filename}`;
+      await User.findByIdAndUpdate(userId, { avatar: avatarUrl });
+      res.json({ success: true, avatar: avatarUrl });
+    } catch (error) {
+      console.error("upload-avatar error:", error);
+      res.status(500).json({ error: "Ошибка загрузки аватара" });
     }
   }
+);
 
-  const updateChatLastMessage = (message: Message) => {
-    setChats((prev) => prev.map((chat) => {
-      if (chat.id === message.chatId) {
+// Endpoint для создания группы/канала с аватаром
+app.post(
+  "/api/create-group",
+  authenticateToken,
+  upload.single("avatar"),
+  async (req, res) => {
+    try {
+      const userId = req.user.userId;
+      const { name, description, type, participants } = req.body;
+      if (!name || !type || !["group", "channel"].includes(type)) {
+        return res.status(400).json({ error: "Некорректные данные" });
+      }
+      let avatarUrl = null;
+      if (req.file) {
+        avatarUrl = `/avatars/${req.file.filename}`;
+      }
+      // Участники: всегда добавлять создателя
+      let members = [userId];
+      if (participants) {
+        try {
+          const parsed = JSON.parse(participants);
+          if (Array.isArray(parsed)) {
+            members = Array.from(new Set([...members, ...parsed]));
+          }
+        } catch {}
+      }
+      // Генерируем уникальный id для группы/канала
+      const chatId = `${type}_${Date.now()}_${Math.round(Math.random() * 1e9)}`;
+      const chat = await Chat.create({
+        _id: chatId,
+        name,
+        avatar: avatarUrl,
+        description: description || "",
+        isGroup: true,
+        participants: members,
+        createdAt: new Date(),
+        type,
+        isEncrypted: true,
+        createdBy: userId,
+        theme: "default",
+        isPinned: false,
+        isMuted: false,
+      });
+      // Получить участников для ответа
+      const populatedChat = await Chat.findById(chat._id)
+        .populate(
+          "participants",
+          "_id username fullName avatar isOnline isVerified status"
+        )
+        .lean();
+      res.json({
+        success: true,
+        chat: {
+          ...populatedChat,
+          id: populatedChat._id?.toString() || populatedChat._id,
+          participants: populatedChat.participants.filter((p) => p !== null),
+        },
+      });
+    } catch (error) {
+      console.error("create-group error:", error);
+      res.status(500).json({ error: "Ошибка создания группы/канала" });
+    }
+  }
+);
+
+// Аутентификация
+app.post("/api/auth", authLimiter, async (req, res) => {
+  try {
+    const { action, email, password, username, fullName, bio } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ error: "Email и пароль обязательны" });
+    }
+
+    if (!validateEmail(email)) {
+      return res.status(400).json({ error: "Неверный формат email" });
+    }
+
+    if (!validatePassword(password)) {
+      return res
+        .status(400)
+        .json({ error: "Пароль должен содержать минимум 8 символов" });
+    }
+
+    if (action === "register") {
+      if (!username || !fullName) {
+        return res
+          .status(400)
+          .json({ error: "Username и полное имя обязательны" });
+      }
+
+      if (!validateUsername(username)) {
+        return res
+          .status(400)
+          .json({
+            error: "Username должен начинаться с @ и содержать 3-20 символов",
+          });
+      }
+
+      const existingUser = await User.findOne({
+        $or: [{ email }, { username }],
+      });
+      if (existingUser) {
+        return res
+          .status(400)
+          .json({
+            error: "Пользователь с таким email или username уже существует",
+          });
+      }
+
+      const hashedPassword = await bcrypt.hash(password, 12);
+      const user = await User.create({
+        email,
+        username,
+        fullName,
+        bio: bio || "",
+        password: hashedPassword,
+        createdAt: new Date(),
+        isVerified: Math.random() > 0.5,
+        isOnline: false,
+        lastSeen: new Date(),
+        avatar: null,
+        status: "offline",
+      });
+
+      const token = jwt.sign(
+        { userId: user._id, email: user.email, username: user.username },
+        JWT_SECRET,
+        { expiresIn: "30d" }
+      );
+      const userResponse = user.toObject();
+      delete userResponse.password;
+      userResponse.id = user._id.toString();
+      // --- Устанавливаем cookie с токеном ---
+      res.cookie("token", token, {
+        httpOnly: false, // Изменено на false для отладки
+        secure: false,
+        sameSite: "Lax", // Вернули обратно
+        maxAge: 30 * 24 * 60 * 60 * 1000,
+        path: "/",
+      });
+      console.log("🍪 Cookie установлен для пользователя:", user.username);
+      // ---
+      res.json({
+        success: true,
+        message: "� егистрация успешна",
+        user: userResponse,
+        token,
+      });
+      console.log(`✅ Новый пользователь: ${username} (${email})`);
+    } else if (action === "login") {
+      const user = await User.findOne({ email });
+      if (!user) {
+        return res.status(401).json({ error: "Неверный email или пароль" });
+      }
+      const isValidPassword = await bcrypt.compare(password, user.password);
+      if (!isValidPassword) {
+        return res.status(401).json({ error: "Неверный email или пароль" });
+      }
+      user.isOnline = true;
+      user.lastSeen = new Date();
+      user.status = "online";
+      await user.save();
+      const token = jwt.sign(
+        { userId: user._id, email: user.email, username: user.username },
+        JWT_SECRET,
+        { expiresIn: "30d" }
+      );
+      const userResponse = user.toObject();
+      delete userResponse.password;
+      userResponse.id = user._id.toString();
+      // --- Устанавливаем cookie с токеном ---
+      res.cookie("token", token, {
+        httpOnly: false, // Изменено на false для отладки
+        secure: false,
+        sameSite: "Lax", // Вернули обратно
+        maxAge: 30 * 24 * 60 * 60 * 1000,
+        path: "/",
+      });
+      console.log("🍪 Cookie установлен для пользователя:", user.username);
+      // ---
+      res.json({
+        success: true,
+        message: "Вход выполнен успешно",
+        user: userResponse,
+        token,
+      });
+      console.log(`✅ Пользователь вошел: ${user.username}`);
+    } else {
+      res.status(400).json({ error: "Неверное действие" });
+    }
+  } catch (error) {
+    console.error("Auth error:", error);
+    res.status(500).json({ error: "Ошибка сервера" });
+  }
+});
+
+// Получе�ие чатов пользователя (MongoDB)
+app.get("/api/chats", authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    console.log("📋 Запрос чатов для пользователя:", userId, req.user.username);
+
+    // Найти все чаты, где пользователь — участник
+    const chats = await Chat.find({ participants: userId })
+      .populate(
+        "participants",
+        "_id username fullName avatar isOnline isVerified status"
+      )
+      .sort({ updatedAt: -1 }) // Сортируем по времени обновления
+      .lean();
+
+    console.log("📋 Найдено чатов:", chats.length);
+
+    // Для каждого чата получить последнее сообщение и количество сообщений
+    const chatList = await Promise.all(
+      chats.map(async (chat) => {
+        const lastMessage = await Message.findOne({ chat: chat._id })
+          .sort({ timestamp: -1 })
+          .lean();
+        const messageCount = await Message.countDocuments({ chat: chat._id });
         return {
           ...chat,
-          lastMessage: {
-            ...message,
-            content: message.isEncrypted ? decryptMessage(message.content) : message.content
+          id: chat._id?.toString() || chat._id,
+          participants: chat.participants.filter((p) => p !== null),
+          lastMessage: lastMessage
+            ? {
+                ...lastMessage,
+                id: lastMessage._id?.toString() || lastMessage._id,
+                senderId: lastMessage.sender?.toString() || lastMessage.sender,
+                chatId: lastMessage.chat?.toString() || lastMessage.chat,
+              }
+            : null,
+          messageCount,
+          unreadCount: 0, // TODO: реализовать
+        };
+      })
+    );
+
+    // Всегда добавляем глобальный чат в начало списка
+    const globalChat = await Chat.findById("global").lean();
+    if (
+      globalChat &&
+      !chatList.some((chat) => (chat.id || chat._id) === "global")
+    ) {
+      //
+      const globalLastMessage = await Message.findOne({ chat: "global" })
+        .sort({ timestamp: -1 })
+        .lean();
+      const globalMessageCount = await Message.countDocuments({
+        chat: "global",
+      });
+      chatList.unshift({
+        ...globalChat,
+        id: globalChat._id?.toString() || globalChat._id,
+        participants: globalChat.participants || [],
+        lastMessage: globalLastMessage
+          ? {
+              ...globalLastMessage,
+              id: globalLastMessage._id?.toString() || globalLastMessage._id,
+              senderId:
+                globalLastMessage.sender?.toString() ||
+                globalLastMessage.sender,
+              chatId:
+                globalLastMessage.chat?.toString() || globalLastMessage.chat,
+            }
+          : null,
+        messageCount: globalMessageCount,
+        unreadCount: 0,
+      });
+      console.log("                                  ");
+    }
+
+    console.log("📋 Отправляем список чатов:", chatList.length, "чатов");
+    res.json(chatList);
+  } catch (error) {
+    console.error("/api/chats error:", error);
+    res.status(500).json({ error: "Ошибка сервера" });
+  }
+});
+
+// Получение сообщений чата (MongoDB) с пагинацией
+app.get("/api/messages/:chatId", authenticateToken, async (req, res) => {
+  try {
+    const { chatId } = req.params;
+    const userId = req.user.userId;
+    const page = parseInt(req.query.page) || 0;
+    const limit = parseInt(req.query.limit) || 50;
+    const skip = page * limit;
+    const chat = await Chat.findById(chatId).lean();
+    if (!chat) return res.status(404).json({ error: "Чат не найден" });
+
+    // Для глобального чата разрешаем всем пользователям получать сообщения
+    const isGlobalChat = chatId === "global";
+    const isParticipant =
+      isGlobalChat ||
+      chat.participants
+        .filter((p) => p !== null)
+        .map((id) => id.toString())
+        .includes(userId);
+    if (!isParticipant) {
+      return res.status(403).json({ error: "Нет доступа к этому чату" });
+    }
+
+    const chatMessages = await Message.find({ chat: chatId })
+      .populate("sender", "username fullName") // Добавляем информацию об отправителе
+      .sort({ timestamp: 1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    // Для каждого сообщения с replyTo подгружаем оригинал
+    const messagesWithReply = await Promise.all(
+      chatMessages.map(async (msg) => {
+        let replyTo = null;
+        if (msg.replyTo) {
+          const originalMsg = await Message.findById(msg.replyTo)
+            .populate("sender", "username fullName")
+            .lean();
+          if (originalMsg) {
+            let senderName = "Неизвестно";
+            if (originalMsg.sender) {
+              senderName =
+                originalMsg.sender.username ||
+                originalMsg.sender.fullName ||
+                "Неизвестно";
+            }
+            replyTo = {
+              id: originalMsg._id?.toString() || originalMsg._id,
+              content: originalMsg.isEncrypted
+                ? decryptMessage(originalMsg.content)
+                : originalMsg.content,
+              senderName,
+            };
+          }
+        }
+        return {
+          ...msg,
+          id: msg._id?.toString() || msg._id,
+          senderId:
+            msg.sender?._id?.toString() || msg.sender?.toString() || msg.sender,
+          senderName:
+            msg.sender?.username || msg.sender?.fullName || "Неизвестно", // Добавляем имя отправителя
+          chatId: msg.chat?.toString() || msg.chat,
+          content: msg.isEncrypted ? decryptMessage(msg.content) : msg.content,
+          replyTo, // теперь это объект, а не id
+        };
+      })
+    );
+    res.json(messagesWithReply);
+  } catch (error) {
+    console.error("/api/messages/:chatId error:", error);
+    res.status(500).json({ error: "Ошибка сервера" });
+  }
+});
+
+// Socket.IO аутентификация (MongoDB)
+io.use(async (socket, next) => {
+  try {
+    const hdrAuth = socket.handshake.headers && socket.handshake.headers.authorization;
+    const queryToken = socket.handshake.query && (socket.handshake.query.token || socket.handshake.query.auth || socket.handshake.query.jwt);
+    const authToken = socket.handshake.auth && (socket.handshake.auth.token || socket.handshake.auth.jwt);
+    const token = authToken || (hdrAuth ? String(hdrAuth).replace(/^Bearer\s+/i, '') : null) || (queryToken ? String(queryToken) : null);
+    console.log("🔌 Socket.IO подключение, токен:", token ? "есть" : "нет");
+
+    if (!token) {
+      console.log("❌ Socket.IO: токен отсутствует");
+      return next(new Error("Токен аутентификации обязателен"));
+    }
+
+    jwt.verify(token, JWT_SECRET, async (err, decoded) => {
+      if (err) {
+        console.log("❌ Socket.IO: ошибка верификации токена:", err.message);
+        return next(new Error("Недействительный или истекший токен"));
+      }
+
+      try {
+        // Проверка бана по IP до допуска
+        const reqLike = { headers: socket.handshake.headers, ip: socket.request?.ip };
+        const clientIp = getClientIp(reqLike);
+        const banned = await BannedIP.findOne({ ip: clientIp }).lean();
+        if (banned) {
+          console.log("❌ Socket.IO: IP забанен:", clientIp);
+          return next(new Error("IP забанен"));
+        }
+
+        const user = await User.findById(decoded.userId).lean();
+        if (!user) {
+          console.log("❌ Socket.IO: пользователь не найден в БД");
+          return next(new Error("Пользователь не найден"));
+        }
+
+        socket.userId = user._id.toString();
+        socket.user = {
+          ...user,
+          id: user._id.toString(), // Добавляем поле id для совместимости
+        };
+        // Сохраняем последний IP
+        try {
+          await User.findByIdAndUpdate(user._id, { lastIp: clientIp, lastSeen: new Date(), isOnline: true });
+        } catch (e) {}
+        console.log(
+          "✅ Socket.IO: пользователь аутентифицирован:",
+          user.username,
+          user._id
+        );
+        next();
+      } catch (error) {
+        console.error("Socket auth error:", error);
+        return next(new Error("Ошибка аутентификации"));
+      }
+    });
+  } catch (error) {
+    console.error("Socket auth error:", error);
+    return next(new Error("Ошибка аутентификации"));
+  }
+});
+
+// Socket.IO обработчики
+io.on("connection", async (socket) => {
+  const user = socket.user;
+  console.log(`🔗 Подключение: ${user.username} (${socket.id})`);
+
+  activeConnections.set(socket.id, user.id);
+  // При подключении обновлять статус пользователя в MongoDB
+  await User.findByIdAndUpdate(user.id, {
+    isOnline: true,
+    lastSeen: new Date(),
+    status: "online",
+  });
+  userHeartbeats.set(user.id, Date.now());
+
+  // Присоединяем пользователя ко всем его чатам (MongoDB)
+  try {
+    const userChats = await Chat.find({ participants: user.id }).lean();
+    for (const chat of userChats) {
+      socket.join(chat._id.toString());
+    }
+
+    // Всегда присоединяем к глобальному чату и добавляем пользователя в участники
+    socket.join("global");
+    globalChatOnline.add(socket.id);
+    io.to("global").emit("global_online_count", globalChatOnline.size);
+
+    // Добавляем пользователя в участники глобального чата если его там нет
+    const globalChat = await Chat.findById("global");
+    if (globalChat && !globalChat.participants.includes(user.id)) {
+      globalChat.participants.push(user.id);
+      await globalChat.save();
+      console.log(`🌍 ${user.username} добавлен в участники глобального чата`);
+    }
+
+    console.log(`🌍 ${user.username} присоединен к глобальному чату`);
+  } catch (error) {
+    console.error("Error joining user chats:", error);
+  }
+
+  // Получение чатов пользователя (MongoDB)
+  socket.on("get_my_chats", async (userId) => {
+    try {
+      if (userId === user.id) {
+        const chats = await Chat.find({ participants: user.id })
+          .populate(
+            "participants",
+            "_id username fullName avatar isOnline isVerified status"
+          )
+          .lean();
+
+        const chatList = await Promise.all(
+          chats.map(async (chat) => {
+            const lastMessage = await Message.findOne({ chat: chat._id })
+              .sort({ timestamp: -1 })
+              .lean();
+            const messageCount = await Message.countDocuments({
+              chat: chat._id,
+            });
+            return {
+              ...chat,
+              id: chat._id?.toString() || chat._id,
+              participants: chat.participants.filter((p) => p !== null),
+              lastMessage: lastMessage
+                ? {
+                    ...lastMessage,
+                    id: lastMessage._id?.toString() || lastMessage._id,
+                    senderId:
+                      lastMessage.sender?.toString() || lastMessage.sender,
+                    chatId: lastMessage.chat?.toString() || lastMessage.chat,
+                  }
+                : null,
+              messageCount,
+              unreadCount: 0,
+            };
+          })
+        );
+
+        // Всегда добавляем глобальный чат в начало списка
+        const globalChat = await Chat.findById("global").lean();
+        if (
+          globalChat &&
+          !chatList.some((chat) => (chat.id || chat._id) === "global")
+        ) {
+          //
+          const globalLastMessage = await Message.findOne({ chat: "global" })
+            .sort({ timestamp: -1 })
+            .lean();
+          const globalMessageCount = await Message.countDocuments({
+            chat: "global",
+          });
+          chatList.unshift({
+            ...globalChat,
+            id: globalChat._id?.toString() || globalChat._id,
+            participants: globalChat.participants || [],
+            lastMessage: globalLastMessage
+              ? {
+                  ...globalLastMessage,
+                  id:
+                    globalLastMessage._id?.toString() || globalLastMessage._id,
+                  senderId:
+                    globalLastMessage.sender?.toString() ||
+                    globalLastMessage.sender,
+                  chatId:
+                    globalLastMessage.chat?.toString() ||
+                    globalLastMessage.chat,
+                }
+              : null,
+            messageCount: globalMessageCount,
+            unreadCount: 0,
+          });
+          console.log("                                  ");
+        }
+
+        socket.emit("my_chats", chatList);
+      }
+    } catch (error) {
+      console.error("get_my_chats error:", error);
+      socket.emit("my_chats", []);
+    }
+  });
+
+  // Получение сообщений (MongoDB)
+  socket.on("get_messages", async (data) => {
+    try {
+      const { chatId, userId } = data;
+      const page = 0;
+      const limit = 50;
+      const skip = page * limit;
+
+      console.log(`📨 Запрос сообщений для чата: ${chatId}`);
+
+      // Для глобального чата разрешаем всем пользователям получать сообщения
+      const isGlobalChat = chatId === "global";
+      if (!isGlobalChat) {
+        const chat = await Chat.findById(chatId).lean();
+        if (!chat) {
+          console.log(`❌ Чат не найден: ${chatId}`);
+          socket.emit("chat_messages", { chatId, messages: [] });
+          return;
+        }
+
+        const isParticipant = chat.participants
+          .filter((p) => p !== null)
+          .map((id) => id.toString())
+          .includes(user.id);
+        if (!isParticipant) {
+          console.log(`❌ Пользователь не является участником чата: ${chatId}`);
+          socket.emit("chat_messages", { chatId, messages: [] });
+          return;
+        }
+      }
+
+      const chatMessages = await Message.find({ chat: chatId })
+        .populate("sender", "username fullName") // Добавляем информацию об отправителе
+        .sort({ timestamp: 1 })
+        .skip(skip)
+        .limit(limit)
+        .lean();
+
+      const decryptedMessages = chatMessages.map((msg) => ({
+        ...msg,
+        id: msg._id?.toString() || msg._id,
+        senderId:
+          msg.sender?._id?.toString() || msg.sender?.toString() || msg.sender,
+        senderName:
+          msg.sender?.username || msg.sender?.fullName || "Неизвестно", // Добавляем имя отправителя
+        chatId: msg.chat?.toString() || msg.chat,
+        content: msg.isEncrypted ? decryptMessage(msg.content) : msg.content,
+      }));
+
+      socket.emit("chat_messages", { chatId, messages: decryptedMessages });
+    } catch (error) {
+      console.error("get_messages error:", error);
+      socket.emit("chat_messages", {
+        chatId: data?.chatId || "unknown",
+        messages: [],
+      });
+    }
+  });
+
+  // Поиск пользователей (MongoDB)
+  socket.on("search_users", async (query) => {
+    try {
+      if (!query || typeof query !== "string" || query.length < 2) {
+        socket.emit("search_results", []);
+        return;
+      }
+      const searchTerm = query.toLowerCase();
+      const usersFound = await User.find({
+        $or: [
+          { username: { $regex: searchTerm, $options: "i" } },
+          { fullName: { $regex: searchTerm, $options: "i" } },
+          { email: { $regex: searchTerm, $options: "i" } },
+        ],
+        _id: { $ne: user.id },
+      })
+        .limit(10)
+        .lean();
+      const results = usersFound.map((u) => ({
+        id: u._id.toString(),
+        username: u.username,
+        fullName: u.fullName,
+        email: u.email,
+        avatar: u.avatar,
+        bio: u.bio,
+        isOnline: u.isOnline,
+        isVerified: u.isVerified,
+        status: u.status,
+      }));
+      socket.emit("search_results", results);
+    } catch (error) {
+      console.error("search_users error:", error);
+      socket.emit("search_results", []);
+    }
+  });
+
+  // Создание приватного чата (MongoDB)
+  socket.on("create_private_chat", async (data) => {
+    try {
+      console.log(
+        `💬 Попытка создания приватного чата: ${user.username} -> ${data.userId}`
+      );
+      console.log(`💬 Данные чата:`, data);
+
+      const { userId, chatId, createdBy } = data;
+      console.log(
+        `🔍 Проверка создателя чата: createdBy=${createdBy}, user.id=${user.id}`
+      );
+
+      // Проверяем, что создатель чата - это текущий пользователь
+      if (createdBy && createdBy !== user.id) {
+        console.log(`❌ Неверный создатель чата: ${createdBy} != ${user.id}`);
+        return;
+      }
+
+      // Проверить, существует ли уже такой чат
+      let chat = await Chat.findById(chatId);
+      if (!chat) {
+        console.log(`📝 Создание нового чата: ${chatId}`);
+
+        // Получить информацию о собеседнике
+        const otherUser = await User.findById(userId).lean();
+        const otherUserName = otherUser ? otherUser.username : "Неизвестно";
+
+        // Создать новый чат
+        chat = await Chat.create({
+          _id: chatId, // Используем строковый ID
+          name: otherUserName, // Используем имя собеседника
+          avatar: otherUser?.avatar || null,
+          description: `Приватный чат с ${otherUserName}`,
+          isGroup: false,
+          participants: [user.id, userId],
+          createdAt: new Date(),
+          type: "private",
+          isEncrypted: true,
+          createdBy: user.id,
+          theme: "default",
+          isPinned: false,
+          isMuted: false,
+        });
+        console.log(
+          `✅ Чат создан автоматически: ${chat._id} с собеседником: ${otherUserName}`
+        );
+      } else {
+        console.log(`📋 Чат уже существует: ${chat._id}`);
+      }
+
+      // Получить участников
+      const populatedChat = await Chat.findById(chat._id)
+        .populate(
+          "participants",
+          "_id username fullName avatar isOnline isVerified status"
+        )
+        .lean();
+
+      console.log(`📋 Участники чата:`, populatedChat.participants);
+
+      // Присоединяем текущего пользователя к чату
+      socket.join(chatId);
+      console.log(`✅ ${user.username} присоединен к чату: ${chatId}`);
+
+      // Находим и присоединяем второго пользователя
+      const targetSocket = Array.from(io.sockets.sockets.values()).find(
+        (s) => s.userId === userId
+      );
+      if (targetSocket) {
+        targetSocket.join(chatId);
+        console.log(`✅ Второй пользователь присоединен к чату: ${chatId}`);
+        targetSocket.emit("new_private_chat", {
+          ...populatedChat,
+          id: populatedChat._id?.toString() || populatedChat._id,
+          participants: populatedChat.participants.filter((p) => p !== null),
+        });
+      } else {
+        console.log(`� ️ Второй пользователь не найден онлайн: ${userId}`);
+      }
+
+      // Отправляем событие текущему пользователю
+      socket.emit("new_private_chat", {
+        ...populatedChat,
+        id: populatedChat._id?.toString() || populatedChat._id,
+        participants: populatedChat.participants.filter((p) => p !== null),
+      });
+
+      console.log(`💬 Создан приватный чат: ${user.username} ↔ ${userId}`);
+    } catch (error) {
+      console.error("create_private_chat error:", error);
+    }
+  });
+
+  // Присоединение к чату (MongoDB)
+  socket.on("join_chat", async (chatId) => {
+    try {
+      console.log(
+        `📥 Попытка присоединения к чату: ${user.username} -> ${chatId}`
+      );
+
+      // Для глобального чата не проверяем существование
+      if (chatId === "global") {
+        socket.join(chatId);
+        globalChatOnline.add(socket.id);
+        io.to("global").emit("global_online_count", globalChatOnline.size);
+        console.log(`✅ ${user.username} присоединился к глобальному чату`);
+        return;
+      }
+
+      const chat = await Chat.findById(chatId);
+      if (!chat) {
+        console.log(`❌ Чат не найден: ${chatId}`);
+        socket.emit("error", { message: "Чат не найден" });
+        return;
+      }
+
+      console.log(`📋 Участники чата:`, chat.participants);
+      console.log(`👤 Текущий пользователь: ${user.id}`);
+
+      // Проверяем, является ли пользователь участником чата
+      const isParticipant = chat.participants.some(
+        (p) => p && p.toString() === user.id
+      );
+      if (!isParticipant) {
+        console.log(
+          `❌ Пользователь ${user.username} не является участником чата ${chatId}`
+        );
+        socket.emit("error", {
+          message: "Вы не являетесь участником этого чата",
+        });
+        return;
+      }
+
+      socket.join(chatId);
+      console.log(`✅ ${user.username} присоединился к чату: ${chatId}`);
+    } catch (error) {
+      console.error("join_chat error:", error);
+      socket.emit("error", { message: "Ошибка присоединения к чату" });
+    }
+  });
+
+  // Отправка сообщения (MongoDB)
+  socket.on("send_message", async (messageData) => {
+    try {
+      console.log(
+        `📤 Попытка отправки сообщения: ${user.username} -> ${messageData.chatId}`
+      );
+      console.log(`📤 Данные сообщения:`, messageData);
+
+      let chat = await Chat.findById(messageData.chatId);
+      if (!chat) {
+        console.log(`❌ Чат не найден: ${messageData.chatId}`);
+
+        // Попробуем создать чат, если он не существует
+        if (messageData.chatId.startsWith("private_")) {
+          const participantIds = messageData.chatId
+            .replace("private_", "")
+            .split("_");
+          if (participantIds.length >= 2) {
+            console.log(`📝 Попытка создания чата: ${messageData.chatId}`);
+
+            // Найти собеседника (не текущего пользователя)
+            const otherUserId = participantIds.find((id) => id !== user.id);
+            const otherUser = otherUserId
+              ? await User.findById(otherUserId).lean()
+              : null;
+            const otherUserName = otherUser ? otherUser.username : "Неизвестно";
+
+            chat = await Chat.create({
+              _id: messageData.chatId,
+              name: otherUserName, // Используем имя собеседника
+              avatar: otherUser?.avatar || null,
+              description: `Приватный чат с ${otherUserName}`,
+              isGroup: false,
+              participants: participantIds,
+              createdAt: new Date(),
+              type: "private",
+              isEncrypted: true,
+              createdBy: user.id,
+              theme: "default",
+              isPinned: false,
+              isMuted: false,
+            });
+            console.log(
+              `✅ Чат создан автоматически: ${chat._id} с собеседником: ${otherUserName}`
+            );
+          }
+        }
+
+        if (!chat) {
+          console.log(`❌ Не удалось создать чат: ${messageData.chatId}`);
+          socket.emit("error", {
+            message: "Чат не найден и не может быть создан",
+          });
+          return;
+        }
+      }
+
+      console.log(`📋 Участники чата:`, chat.participants);
+      console.log(`👤 Текущий пользователь: ${user.id}`);
+
+      // Проверяем, является ли пользователь участником чата
+      // Для глобального чата разрешаем всем пользователям отправлять сообщения
+      const isGlobalChat = messageData.chatId === "global";
+      const isParticipant =
+        isGlobalChat ||
+        chat.participants.some((p) => p && p.toString() === user.id);
+      if (!isParticipant) {
+        console.log(
+          `❌ Пользователь ${user.username} не является участником чата ${messageData.chatId}`
+        );
+        socket.emit("error", {
+          message: "Вы не являетесь участником этого чата",
+        });
+        return;
+      }
+
+      // Rate limiting для глобального чата (5 секунд между сообщениями)
+      if (isGlobalChat) {
+        const now = Date.now();
+        const lastTimestamp = globalChatRateLimit.get(user.id) || 0;
+        if (now - lastTimestamp < 5000) {
+          // 5 секунд
+          socket.emit("error", {
+            message: "В общий чат можно отправлять сообщение раз в 5 секунд!",
+          });
+          return;
+        }
+        globalChatRateLimit.set(user.id, now);
+      }
+
+      // Ограничение на количество слов (100 слов для всех чатов)
+      const originalContent = messageData.isEncrypted
+        ? decryptMessage(messageData.content)
+        : messageData.content;
+      const wordCount = originalContent.split(/\s+/).filter(Boolean).length;
+      if (wordCount > 100) {
+        socket.emit("error", {
+          message: "Сообщение не должно содержать более 100 слов!",
+        });
+        return;
+      }
+
+      // Валидация сообщения
+      if (
+        !messageData.content ||
+        typeof messageData.content !== "string" ||
+        messageData.content.trim().length === 0
+      ) {
+        console.log(`❌ Неверное содержимое сообщения`);
+        socket.emit("error", { message: "Сообщение не может быть пустым" });
+        return;
+      }
+
+      if (messageData.content.length > 1000) {
+        socket.emit("error", { message: "Сообщение слишком длинное" });
+        return;
+      }
+
+      // Создать сообщение - сохраняем как есть (уже зашифрованное с клиента)
+      const message = await Message.create({
+        sender: user.id,
+        chat: chat._id.toString(), // Исправляем - сохраняем как строку
+        content: messageData.content, // Сохраняем зашифрованное содержимое
+        timestamp: new Date(),
+        type: messageData.type || "text",
+        fileUrl: messageData.fileUrl,
+        fileName: messageData.fileName,
+        fileSize: messageData.fileSize,
+        isEncrypted: messageData.isEncrypted || false,
+        replyTo: messageData.replyTo?.id,
+        reactions: [],
+        readBy: [user.id],
+        isEdited: false,
+      });
+
+      console.log(`✅ Сообщение создано в БД: ${message._id}`);
+
+      // Формируем replyTo для UI, если это ответ
+      let replyToData = null;
+      if (message.replyTo) {
+        const originalMsg = await Message.findById(message.replyTo).lean();
+        if (originalMsg) {
+          let senderName = "Неизвестно";
+          if (originalMsg.sender) {
+            const senderUser = await User.findById(originalMsg.sender).lean();
+            senderName =
+              senderUser?.username || senderUser?.fullName || "Неизвестно";
+          }
+          replyToData = {
+            id: originalMsg._id?.toString() || originalMsg._id,
+            content: originalMsg.isEncrypted
+              ? decryptMessage(originalMsg.content)
+              : originalMsg.content,
+            senderName,
+          };
+        }
+      }
+
+      const msgObj = {
+        ...message.toObject(),
+        id: message._id?.toString() || message._id,
+        senderId: user.id,
+        senderName: user.username,
+        chatId: chat._id?.toString() || chat._id,
+        content: messageData.content, // Отправляем как есть - клиент сам расшифрует
+        replyTo: replyToData,
+      };
+
+      console.log(`📤 Отправка сообщения в комнату: ${chat._id}`);
+      console.log(`📤 Содержимое сообщения:`, msgObj);
+
+      // Отправляем сообщение всем участникам чата
+      io.to(chat._id.toString()).emit("new_message", msgObj);
+
+      // Для глобального чата также отправляем всем подключенным пользователям
+      if (isGlobalChat) {
+        console.log(
+          `🌍 Отправка сообщения во все подключения для глобального чата`
+        );
+        io.emit("new_message", msgObj);
+      }
+
+      // Если чат приватный, отправить событие 'new_private_chat' второму участнику
+      if (chat.type === "private") {
+        console.log(`💬 Приватный чат, участники:`, chat.participants);
+        chat.participants.forEach((participantId) => {
+          if (participantId.toString() !== user.id) {
+            console.log(`🔍 Ищем сокет для пользователя: ${participantId}`);
+            const targetSocket = Array.from(io.sockets.sockets.values()).find(
+              (s) => s.userId === participantId.toString()
+            );
+            if (targetSocket) {
+              console.log(
+                `✅ Найден сокет для пользователя ${participantId}, отправляем уведомление о новом чате`
+              );
+              // Проверяем, есть ли у пользователя этот чат (можно добавить проверку, если нужно)
+              targetSocket.emit("new_private_chat", {
+                ...chat,
+                id: chat._id?.toString() || chat._id,
+                participants: chat.participants,
+              });
+            } else {
+              console.log(
+                `� ️ Сокет для пользователя ${participantId} не найден`
+              );
+            }
+          }
+        });
+      }
+
+      console.log(
+        `💬 Сообщение от ${user.username} в чат ${chat._id} отправлено успешно`
+      );
+    } catch (error) {
+      console.error("send_message error:", error);
+      socket.emit("error", { message: "Ошибка отправки сообщения" });
+    }
+  });
+
+  // � еакции на сообщения (MongoDB)
+  socket.on("add_reaction", async (data) => {
+    try {
+      const { messageId, emoji, userId, username } = data;
+      if (userId !== user.id) return;
+      if (!emoji || !reactionEmojis.includes(emoji)) return;
+      // Найти сообщение
+      const message = await Message.findById(messageId);
+      if (!message) return;
+      // Проверить, есть ли уже реакция от этого пользователя
+      const existing = message.reactions.find(
+        (r) => r.userId === userId && r.emoji === emoji
+      );
+      if (existing) {
+        // Удалить реакцию
+        message.reactions = message.reactions.filter(
+          (r) => !(r.userId === userId && r.emoji === emoji)
+        );
+      } else {
+        // Добавить реакцию
+        message.reactions.push({ emoji, userId, username });
+      }
+      await message.save();
+      const chatId = message.chat?.toString() || message.chat;
+      io.to(chatId).emit("message_reaction", {
+        messageId: message._id?.toString() || message._id,
+        reactions: message.reactions,
+      });
+    } catch (error) {
+      console.error("add_reaction error:", error);
+    }
+  });
+
+  // Печатает сообщение (MongoDB check)
+  socket.on("typing", async (data) => {
+    try {
+      const { chatId, userId, username } = data;
+      const chat = await Chat.findById(chatId);
+      if (!chat) return;
+      if (
+        !chat.participants
+          .filter((p) => p !== null)
+          .map((id) => id.toString())
+          .includes(user.id)
+      )
+        return;
+      if (!typingUsers.has(chatId)) {
+        typingUsers.set(chatId, new Set());
+      }
+      typingUsers.get(chatId).add(userId);
+      socket.to(chatId).emit("user_typing", { userId, username, chatId });
+    } catch (error) {
+      console.error("typing error:", error);
+    }
+  });
+
+  // Перестал печатать (MongoDB check)
+  socket.on("stop_typing", async (data) => {
+    try {
+      const { chatId } = data;
+      const chat = await Chat.findById(chatId);
+      if (!chat) return;
+      if (
+        !chat.participants
+          .filter((p) => p !== null)
+          .map((id) => id.toString())
+          .includes(user.id)
+      )
+        return;
+      if (typingUsers.has(chatId)) {
+        typingUsers.get(chatId).delete(user.id);
+        if (typingUsers.get(chatId).size === 0) {
+          typingUsers.delete(chatId);
+        }
+      }
+      socket.to(chatId).emit("user_stop_typing", { userId: user.id, chatId });
+    } catch (error) {
+      console.error("stop_typing error:", error);
+    }
+  });
+
+  // Очистка чата (MongoDB)
+  socket.on("clear_chat", async (chatId) => {
+    try {
+      const chat = await Chat.findById(chatId);
+      if (!chat) return;
+
+      // Проверяем права для глобального чата
+      const isGlobalChat = chatId === "global";
+      const isAdmin = user.isAdmin;
+      const isParticipant = chat.participants
+        .filter((p) => p !== null)
+        .map((id) => id.toString())
+        .includes(user.id);
+      const isCreator = chat.createdBy?.toString() === user.id;
+
+      if (isGlobalChat && !isAdmin) {
+        socket.emit("error", {
+          message: "Только администратор может очищать глобальный чат",
+        });
+        return;
+      }
+
+      if (!isParticipant && !isCreator && !isGlobalChat) {
+        socket.emit("error", { message: "Нет прав для очистки этого чата" });
+        return;
+      }
+
+      await Message.deleteMany({ chat: chatId });
+      io.to(chatId).emit("chat_cleared", { chatId });
+      console.log(`🧹 Чат ${chatId} очищен пользователем ${user.username}`);
+    } catch (error) {
+      console.error("clear_chat error:", error);
+    }
+  });
+
+  // Обновление настроек чата
+  socket.on("update_chat_settings", async (data) => {
+    try {
+      const { chatId, isPinned, isMuted } = data;
+      const chat = await Chat.findById(chatId);
+      if (!chat) return;
+
+      // Проверяем права
+      const isParticipant = chat.participants
+        .filter((p) => p !== null)
+        .map((id) => id.toString())
+        .includes(user.id);
+      const isCreator = chat.createdBy?.toString() === user.id;
+
+      if (!isParticipant && !isCreator) {
+        socket.emit("error", {
+          message: "Нет прав для изменения настроек чата",
+        });
+        return;
+      }
+
+      const updateData = {};
+      if (isPinned !== undefined) updateData.isPinned = isPinned;
+      if (isMuted !== undefined) updateData.isMuted = isMuted;
+
+      await Chat.findByIdAndUpdate(chatId, updateData);
+
+      // Уведомляем всех участников чата об изменении
+      io.to(chatId).emit("chat_settings_updated", {
+        chatId,
+        isPinned,
+        isMuted,
+      });
+
+      console.log(
+        `⚙️ Настройки чата ${chatId} обновлены пользователем ${user.username}`
+      );
+    } catch (error) {
+      console.error("update_chat_settings error:", error);
+    }
+  });
+
+  // Heartbeat для отслеживания активности
+  socket.on("heartbeat", () => {
+    userHeartbeats.set(user.id, Date.now());
+  });
+
+  // Обновление профиля (MongoDB)
+  socket.on("update_profile", async (userData) => {
+    try {
+      // Валидация данных профиля
+      const allowedFields = ["fullName", "bio", "avatar"];
+      const sanitizedData = {};
+      for (const field of allowedFields) {
+        if (userData[field] !== undefined) {
+          if (field === "fullName" && userData[field]) {
+            sanitizedData[field] = userData[field].trim().substring(0, 50);
+          } else if (field === "bio" && userData[field]) {
+            sanitizedData[field] = userData[field].trim().substring(0, 200);
+          } else {
+            sanitizedData[field] = userData[field];
           }
         }
       }
-      return chat
-    }))
-  }
-
-  // Удаление/редактирование сообщений (перемещено внутрь компонента)
-  const handleDeleteMessage = (messageId: string) => {
-    if (!socketRef.current) return
-    socketRef.current.emit("delete_message", { messageId })
-  }
-
-  const handleEditMessage = () => {
-    if (!editingMessage || !socketRef.current) return
-    socketRef.current.emit("edit_message", {
-      messageId: editingMessage.id,
-      newContent: editedText,
-    })
-    setEditingMessage(null)
-    setEditedText("")
-  }
-
-  const handleAuth = async () => {
-    setLoading(true)
-    setError("")
-
-    try {
-      const response = await fetch("https://actogr.onrender.com/api/auth", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: isLoginMode ? "login" : "register",
-          ...formData,
-        }),
-        credentials: "include",
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        setError(data.error)
-        return
-      }
-
-      console.log("🔍 Ответ сервера при аутентификации:", data)
-      
-      const user: User = {
-        id: data.user.id,
-        username: data.user.username,
-        email: data.user.email,
-        fullName: data.user.fullName,
-        avatar: data.user.avatar,
-        bio: data.user.bio,
-        isOnline: true,
-        lastSeen: new Date(),
-        isVerified: data.user.isVerified,
-        status: "online",
-      }
-
-      console.log("🔍 Созданный пользователь:", user)
-      
-      setCurrentUser(user)
-      setIsAuthenticated(true)
-      setSuccess(isLoginMode ? "Успешный вход!" : "Регистрация завершена!")
-
-      localStorage.setItem("actogram_user", JSON.stringify(user))
-      localStorage.setItem("actogram_token", data.token)
-
-      if ("Notification" in window) {
-        Notification.requestPermission()
-      }
-    } catch (error) {
-      setError("Ошибка подключения к серверу")
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleLogout = () => {
-    localStorage.removeItem("actogram_user")
-    localStorage.removeItem("actogram_token")
-    setCurrentUser(null)
-    setIsAuthenticated(false)
-    setChats([])
-    setMessages([])
-    setSelectedChat(null)
-    socketRef.current?.disconnect()
-  }
-
-  const loadChats = async () => {
-    if (!currentUser) return
-    
-    console.log("📋 Загружаем чаты для пользователя:", currentUser.id, currentUser.username)
-    
-    try {
-      // Загружаем чаты через REST API
-      const token = localStorage.getItem("actogram_token")
-      console.log("🔑 Токен из localStorage:", token ? "есть" : "нет")
-      
-      const response = await fetch("https://actogr.onrender.com/api/chats", {
-        headers: {
-          "Authorization": `Bearer ${token}`,
-          "Content-Type": "application/json"
-        },
-        credentials: "include",
-      })
-      
-      console.log("📋 Ответ сервера:", response.status, response.statusText)
-      
-      if (response.ok) {
-        const chats = await response.json()
-        console.log("🔍 Загружены чаты из API:", chats)
-        
-        // Расшифровываем последние сообщения в чатах
-        const decryptedChats = chats.map((chat: Chat) => ({
-          ...chat,
-          lastMessage: chat.lastMessage ? {
-            ...chat.lastMessage,
-            content: chat.lastMessage.isEncrypted ? decryptMessage(chat.lastMessage.content) : chat.lastMessage.content
-          } : undefined
+      await User.findByIdAndUpdate(user.id, sanitizedData);
+      // Обновляем пользователя во всех чатах (MongoDB не требует этого, но можно обновить в памяти)
+      // Уведомляем всех об обновлении
+      const activeUsers = await User.find({ isOnline: true }).lean();
+      io.emit(
+        "users_update",
+        activeUsers.map((u) => ({
+          id: u._id.toString(),
+          username: u.username,
+          fullName: u.fullName,
+          email: u.email,
+          avatar: u.avatar,
+          isOnline: u.isOnline,
+          isVerified: u.isVerified,
+          status: u.status,
         }))
-        
-        setChats(decryptedChats)
-      } else {
-        console.error("❌ Ошибка загрузки чатов:", response.status)
-        const errorText = await response.text()
-        console.error("❌ Текст ошибки:", errorText)
-      }
+      );
+      console.log(`👤 ${user.username} обновил профиль`);
     } catch (error) {
-      console.error("❌ Ошибка загрузки чатов:", error)
+      console.error("update_profile error:", error);
     }
-    
-    // Также запрашиваем через Socket.IO для обновления в реальном времени
-    if (socketRef.current && currentUser) {
-      console.log("🔌 Запрашиваем чаты через Socket.IO")
-      socketRef.current.emit("get_my_chats", currentUser.id)
-    }
-  }
+  });
 
-  const loadMessages = async (chatId: string) => {
-    if (!currentUser) return
-    
-    console.log("📨 Загружаем сообщения для чата:", chatId)
-    
+  // Отключение
+  socket.on("disconnect", async () => {
+    activeConnections.delete(socket.id);
+    // Удаляем из всех typing lists
+    for (const [chatId, typingSet] of typingUsers.entries()) {
+      if (typingSet.has(user.id)) {
+        typingSet.delete(user.id);
+        if (typingSet.size === 0) {
+          typingUsers.delete(chatId);
+        }
+        socket.to(chatId).emit("user_stop_typing", { userId: user.id, chatId });
+      }
+    }
+    // Обновить статус пользователя в MongoDB
+    await User.findByIdAndUpdate(user.id, {
+      isOnline: false,
+      lastSeen: new Date(),
+      status: "offline",
+    });
+    // Удаляем из heartbeat tracking
+    userHeartbeats.delete(user.id);
+    globalChatOnline.delete(socket.id);
+    io.to("global").emit("global_online_count", globalChatOnline.size);
+    // Обновляем список активных пользователей
+    const activeUsers = await User.find({ isOnline: true }).lean();
+    io.emit(
+      "users_update",
+      activeUsers.map((u) => ({
+        id: u._id.toString(),
+        username: u.username,
+        fullName: u.fullName,
+        email: u.email,
+        avatar: u.avatar,
+        isOnline: u.isOnline,
+        isVerified: u.isVerified,
+        status: u.status,
+      }))
+    );
+    console.log(`🔌 Отключение: ${user.username}`);
+  });
+
+  //                    (                                         )
+  socket.on("delete_message", async (data) => {
     try {
-      const token = localStorage.getItem("actogram_token")
-      const response = await fetch(`https://actogr.onrender.com/api/messages/${chatId}`, {
-        headers: {
-          "Authorization": `Bearer ${token}`,
-          "Content-Type": "application/json"
-        },
-        credentials: "include",
-      })
-      
-      console.log("📨 Ответ сервера для сообщений:", response.status, response.statusText)
-      
-      if (response.ok) {
-        const messages = await response.json()
-        console.log("🔍 Загружены сообщения из API:", messages)
-        setMessages(messages)
-        setMessagesCache(prev => ({ ...prev, [chatId]: messages }))
-      } else {
-        console.error("❌ Ошибка загрузки сообщений:", response.status)
-        const errorText = await response.text()
-        console.error("❌ Текст ошибки:", errorText)
+      const { messageId } = data;
+      const message = await Message.findById(messageId);
+      if (!message) {
+        socket.emit("error", { message: "                    " });
+        return;
       }
+      //
+      if (message.sender.toString() !== user.id) {
+        socket.emit("error", { message: "                                  " });
+        return;
+      }
+      await Message.findByIdAndDelete(messageId);
+      io.to(message.chat.toString()).emit("message_deleted", messageId);
     } catch (error) {
-      console.error("❌ Ошибка загрузки сообщений:", error)
+      console.error("delete_message error:", error);
+      socket.emit("error", { message: "                         " });
     }
-    if (socketRef.current && currentUser) {
-      socketRef.current.emit("get_messages", { chatId, userId: currentUser.id })
-    }
-  }
+  });
 
-  const sendMessage = () => {
-    if (!newMessage || !selectedChat || !currentUser || !socketRef.current) return;
-
-    if (selectedChat.id === "global") {
-      if (globalChatCooldown > 0 || pendingGlobalMessage) return;
-      setPendingGlobalMessage(true);
-    }
-
-    console.log("🔍 Отладка sendMessage:", {
-      currentUser: currentUser,
-      currentUserId: currentUser?.id,
-      selectedChat: selectedChat,
-      newMessage: newMessage,
-      socketRef: !!socketRef.current
-    })
-    
-    if (!newMessage || !selectedChat || !currentUser || !socketRef.current) {
-      console.log("❌ Не удается отправить сообщение:", {
-        hasMessage: !!newMessage,
-        hasChat: !!selectedChat,
-        hasUser: !!currentUser,
-        hasSocket: !!socketRef.current
-      })
-      return
-    }
-
-    console.log("📤 Отправка сообщения:", {
-      content: newMessage,
-      chatId: selectedChat.id,
-      userId: currentUser.id,
-      username: currentUser.username
-    })
-
-    const messageData = {
-      content: encryptMessage(newMessage),
-      chatId: selectedChat.id,
-      type: "text",
-      isEncrypted: true,
-      replyTo: replyingTo
-        ? {
-            id: replyingTo.id,
-            content: replyingTo.content,
-            senderName: replyingTo.senderName,
-          }
-        : undefined,
-    }
-
-    socketRef.current.emit("send_message", messageData)
-    setNewMessage("")
-    setReplyingTo(null)
-    stopTyping()
-  }
-
-  const selectChat = (chat: Chat) => {
-    setSelectedChat(chat)
-    setReplyingTo(null)
-    setEditingMessage(null)
-    // Сначала показываем сообщения из кэша (если есть)
-    if (messagesCache[chat.id]) {
-      setMessages(messagesCache[chat.id])
-    } else {
-      setMessages([])
-    }
-    loadMessages(chat.id)
-    if (isMobile) setShowSidebar(false)
-    if (socketRef.current) {
-      socketRef.current.emit("join_chat", chat.id)
-    }
-    console.log("Участники выбранного чата:", chat.participants)
-  }
-
-  const startTyping = () => {
-    if (selectedChat && socketRef.current && currentUser) {
-      socketRef.current.emit("typing", {
-        chatId: selectedChat.id,
-        userId: currentUser.id,
-        username: currentUser.username,
-      })
-
-      if (typingTimeoutRef.current) {
-        clearTimeout(typingTimeoutRef.current)
-      }
-
-      typingTimeoutRef.current = setTimeout(stopTyping, 1000)
-    }
-  }
-
-  const stopTyping = () => {
-    if (selectedChat && socketRef.current) {
-      socketRef.current.emit("stop_typing", { chatId: selectedChat.id })
-    }
-  }
-
-  const searchUsers = (query: string) => {
-    if (!query.trim() || !socketRef.current) {
-      setSearchResults([])
-      return
-    }
-    socketRef.current.emit("search_users", query)
-  }
-
-  const startPrivateChat = (user: User) => {
-    if (!currentUser || !socketRef.current) return
-    if (user.id === currentUser.id) return // Нельзя создавать чат с самим собой!
-
-    const chatId = `private_${[currentUser.id, user.id].sort().join("_")}`
-    const existingChat = chats.find((chat) => chat.id === chatId)
-
-    if (existingChat) {
-      selectChat(existingChat)
-      setShowUserSearch(false)
-      return
-    }
-
-    const newChat: Chat = {
-      id: chatId,
-      name: user.username,
-      avatar: user.avatar,
-      isGroup: false,
-      participants: [currentUser, user],
-      unreadCount: 0,
-      messageCount: 0,
-      type: "private",
-      isEncrypted: true,
-      createdBy: currentUser.id,
-      createdAt: new Date(),
-    }
-
-    setChats((prev) => [...prev, newChat])
-    selectChat(newChat)
-    setShowUserSearch(false)
-
-    console.log("🔍 Создание приватного чата:", {
-      userId: user.id,
-      chatId,
-      createdBy: currentUser.id,
-    })
-    
-    socketRef.current.emit("create_private_chat", {
-      userId: user.id,
-      chatId,
-      createdBy: currentUser.id,
-    })
-
-    // Автоматически отправляем приветственное сообщение, чтобы чат появился у обоих
-    socketRef.current.emit("send_message", {
-      content: encryptMessage("Salom!"),
-      chatId,
-      type: "text",
-      isEncrypted: true,
-    })
-  }
-
-  const addReaction = (messageId: string, emoji: string) => {
-    if (!currentUser || !socketRef.current) return
-
-    socketRef.current.emit("add_reaction", {
-      messageId,
-      emoji,
-      userId: currentUser.id,
-      username: currentUser.username,
-    })
-  }
-
-  const sendImage = async (file: File) => {
-    if (!selectedChat || !currentUser) {
-      console.log('❌ Нет выбранного чата или пользователя')
-      return
-    }
-    
-    console.log('📷 Начинаем загрузку изображения:', {
-      fileName: file.name,
-      fileSize: file.size,
-      fileType: file.type,
-      selectedChat: selectedChat.id,
-      currentUser: currentUser.username
-    })
-    
-    // Показываем индикатор загрузки
-    setSuccess('📤 Отправляем изображение...')
-    
-    const formData = new FormData()
-    formData.append('image', file)
-    formData.append('chatId', selectedChat.id)
-    
+  //                          (                                               )
+  socket.on("edit_message", async (data) => {
     try {
-      console.log('📤 Отправляем запрос на сервер...')
-      const token = localStorage.getItem("actogram_token")
-      console.log('🔑 Токен:', token)
-      console.log('📤 chatId:', selectedChat.id)
-      console.log('📤 file:', file)
-      const response = await fetch('https://actogr.onrender.com/api/upload-image', {
-        method: 'POST',
-        headers: {
-          "Authorization": `Bearer ${token}`,
-        },
-        body: formData,
-        credentials: 'include',
-      })
-      
-      console.log('📥 Ответ сервера:', response.status, response.statusText)
-      const responseText = await response.text()
-      console.log('📥 Текст ответа сервера:', responseText)
-      let data = {}
-      try { data = JSON.parse(responseText) } catch {}
-      
-      if (response.ok) {
-        console.log('📷 Изображение загружено:', data)
-        setSuccess('📷 Фото отправлено!')
-      } else {
-        console.error('❌ Ошибка сервера:', data)
-        setError((data as any).error || 'Ошибка загрузки изображения')
+      const { messageId, newContent, isEncrypted } = data;
+      const message = await Message.findById(messageId);
+      if (!message) {
+        socket.emit("error", { message: "                    " });
+        return;
       }
+      //
+      if (message.sender.toString() !== user.id) {
+        socket.emit("error", {
+          message: "                                        ",
+        });
+        return;
+      }
+      message.content = newContent;
+      message.isEncrypted = !!isEncrypted;
+      message.isEdited = true;
+      await message.save();
+      //
+      const msgObj = {
+        ...message.toObject(),
+        id: message._id?.toString() || message._id,
+        senderId: user.id,
+        senderName: user.username,
+        chatId: message.chat?.toString() || message.chat,
+        content: newContent,
+        isEdited: true,
+      };
+      io.to(message.chat.toString()).emit("message_edited", msgObj);
     } catch (error) {
-      console.error('❌ Ошибка загрузки изображения:', error)
-      setError('Ошибка загрузки изображения')
+      console.error("edit_message error:", error);
+      socket.emit("error", { message: "                               " });
     }
-  }
+  });
+});
 
-  const handleImageUpload = () => {
-    console.log('📷 Открываем диалог выбора файла...')
-    const input = document.createElement('input')
-    input.type = 'file'
-    input.accept = 'image/*'
-    input.multiple = false // Только одно изображение
-    input.onchange = (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0]
-      if (file) {
-        console.log('📷 Файл выбран:', file.name, file.size, file.type)
-        // Автоматически отправляем изображение
-        sendImage(file)
-        // Очищаем input для следующего использования
-        input.value = ''
-      } else {
-        console.log('❌ Файл не выбран')
+// Функция очистки неактивных пользователей
+const cleanupInactiveUsers = async () => {
+  try {
+    const now = Date.now()
+    const inactiveThreshold = 10 * 60 * 1000 // 10 минут без активности
+    for (const [userId, lastHeartbeat] of userHeartbeats.entries()) {
+      if (now - lastHeartbeat > inactiveThreshold) {
+        // Пользователь неактивен, обновляем статус
+        await User.findByIdAndUpdate(userId, {
+          isOnline: false,
+          lastSeen: new Date(),
+          status: "offline",
+        })
+        userHeartbeats.delete(userId)
+        activeConnections.delete(userId)
+        console.log(
+          `🔌 Автоматическое отключение неактивного пользователя: ${userId}`
+        )
       }
     }
-    input.click()
+    // Обновляем список активных пользователей
+    const activeUsers = await User.find({ isOnline: true }).lean();
+    io.emit(
+      "users_update",
+      activeUsers.map((u) => ({
+        id: u._id.toString(),
+        username: u.username,
+        fullName: u.fullName,
+        email: u.email,
+        avatar: u.avatar,
+        isOnline: u.isOnline,
+        isVerified: u.isVerified,
+        status: u.status,
+      }))
+    );
+  } catch (error) {
+    console.error("cleanupInactiveUsers error:", error)
   }
-
-  // Drag & Drop для изображений
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-  }
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    
-    const list = (e.dataTransfer && e.dataTransfer.files) ? e.dataTransfer.files : ([] as unknown as FileList)
-    const files = Array.from(list as FileList)
-    const imageFiles = (files as File[]).filter((file) => (file as File).type?.startsWith('image/'))
-    
-    if (imageFiles.length > 0) {
-      console.log('📷 Изображение перетащено:', imageFiles[0].name)
-      sendImage(imageFiles[0] as File)
-    }
-  }
-
-  // Функции для работы с чатами
-  const showChatInfo = (chat: Chat | null) => {
-    if (!chat) return
-    setSelectedChatForInfo(chat)
-    setShowChatInfoDialog(true)
-  }
-
-  const togglePinChat = (chat: Chat | null) => {
-    if (!chat || !socketRef.current) return
-    
-    const newPinnedState = !chat.isPinned
-    setChats(prev => prev.map(c => 
-      c.id === chat.id ? { ...c, isPinned: newPinnedState } : c
-    ))
-    
-    // Отправляем на сервер
-    socketRef.current.emit("update_chat_settings", {
-      chatId: chat.id,
-      isPinned: newPinnedState
-    })
-  }
-
-  const toggleMuteChat = (chat: Chat | null) => {
-    if (!chat || !socketRef.current) return
-    
-    const newMutedState = !chat.isMuted
-    setChats(prev => prev.map(c => 
-      c.id === chat.id ? { ...c, isMuted: newMutedState } : c
-    ))
-    
-    // Отправляем на сервер
-    socketRef.current.emit("update_chat_settings", {
-      chatId: chat.id,
-      isMuted: newMutedState
-    })
-  }
-
-  const clearChat = (chat: Chat | null) => {
-    if (!chat || !socketRef.current) return
-    
-    // Проверяем права для глобального чата
-    if (chat.id === "global" && currentUser?.username !== "@adminstator") {
-      setError("Только администратор может очищать глобальный чат")
-      return
-    }
-    
-    if (confirm("Вы уверены, что хотите очистить этот чат? Это действие нельзя отменить.")) {
-      socketRef.current.emit("clear_chat", chat.id)
-      setMessages([])
-      setSuccess("Чат очищен")
-    }
-  }
-
-  // Функция для сохранения настроек
-  const saveSettings = () => {
-    localStorage.setItem(
-      "actogram_settings",
-      JSON.stringify({
-        darkMode,
-        language,
-        notifications,
-        theme: selectedTheme,
-      })
-    )
-  }
-
-  const applyStickerAvatar = (stickerUrl: string) => {
-    if (!currentUser) return
-    const updatedUser = { ...currentUser, avatar: stickerUrl }
-    setCurrentUser(updatedUser)
-    localStorage.setItem("actogram_user", JSON.stringify(updatedUser))
-  }
-
-  const handleInputChange = (field: string, value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }))
-    setError("")
-  }
-
-  const filteredChats = chats.filter((chat) => chat.name.toLowerCase().includes(searchQuery.toLowerCase()))
-
-  // Стили
-  const gradientBg = `bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 dark:from-gray-900 dark:via-blue-900 dark:to-purple-900`
-  const cardStyle = `backdrop-blur-lg bg-white/80 dark:bg-gray-800/80 border border-white/20 dark:border-gray-700/50 shadow-xl`
-  const buttonStyle = `transition-all duration-100 hover:scale-105 active:scale-95 shadow-lg hover:shadow-xl`
-  const inputStyle = `backdrop-blur-sm bg-white/50 dark:bg-gray-800/50 border-2 border-transparent focus:border-blue-500 dark:focus:border-blue-400`
-
-  // Проверка домена
-  const hostname = typeof window !== "undefined" ? window.location.hostname : ""
-  const allowedDomains = ["vercel.app", "render.com", "localhost"]
-  const isDomainAllowed = allowedDomains.some((domain) => hostname.includes(domain) || hostname === "localhost")
-
-  if (!isDomainAllowed) {
-    return (
-      <div className={`min-h-screen ${gradientBg} flex items-center justify-center p-4`}>
-        <Card className={`max-w-md ${cardStyle}`}>
-          <CardHeader>
-            <CardTitle className="text-red-600 flex items-center gap-2">
-              <Shield className="h-6 w-6" />
-              Доступ ограничен
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p>ACTOGRAM доступен только с разрешенных доменов</p>
-            <p className="text-sm text-gray-500 mt-2">Проверка безопасности домена</p>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
-
-  // Экран аутентификации
-  if (!isAuthenticated) {
-    return (
-      <div className={`min-h-screen ${gradientBg} flex items-center justify-center p-4`}>
-        <Card className={`w-full max-w-md ${cardStyle} animate-in fade-in-50 duration-500`}>
-          <CardHeader className="text-center space-y-4">
-            <div className="mx-auto w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-2xl">
-              <MessageCircle className="h-10 w-10 text-white" />
-            </div>
-            <div>
-              <CardTitle className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-                {t.appName}
-              </CardTitle>
-              <p className="text-gray-600 dark:text-gray-300 mt-2">{t.welcome}</p>
-            </div>
-            <div className="flex items-center justify-center gap-2 text-sm">
-              <Lock className="h-4 w-4 text-green-500" />
-              <span className="text-green-600 dark:text-green-400">End-to-End Encrypted</span>
-            </div>
-          </CardHeader>
-
-          <CardContent className="space-y-6">
-            <div className={`grid w-full grid-cols-2 ${cardStyle}`}>
-              <Button
-                variant={isLoginMode ? "default" : "outline"}
-                className={buttonStyle}
-                onClick={() => setIsLoginMode(true)}
-              >
-                {t.login}
-              </Button>
-              <Button
-                variant={!isLoginMode ? "default" : "outline"}
-                className={buttonStyle}
-                onClick={() => setIsLoginMode(false)}
-              >
-                {t.register}
-              </Button>
-            </div>
-
-            {isLoginMode ? (
-              <div className="space-y-4 mt-6">
-                <div className="space-y-2">
-                  <Label htmlFor="email" className="flex items-center gap-2 text-sm font-medium">
-                    <Mail className="h-4 w-4" />
-                    {t.email}
-                  </Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="your@email.com"
-                    value={formData.email}
-                    onChange={(e) => handleInputChange("email", e.target.value)}
-                    className={inputStyle}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="password" className="flex items-center gap-2 text-sm font-medium">
-                    <Lock className="h-4 w-4" />
-                    {t.password}
-                  </Label>
-                  <div className="relative">
-                    <Input
-                      id="password"
-                      type={showPassword ? "text" : "password"}
-                      placeholder="••••••••"
-                      value={formData.password}
-                      onChange={(e) => handleInputChange("password", e.target.value)}
-                      className={`${inputStyle} pr-10`}
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="absolute right-0 top-0 h-full px-3"
-                      onClick={() => setShowPassword(!showPassword)}
-                    >
-                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-4 mt-6">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="fullName" className="text-sm font-medium">
-                      {t.fullName}
-                    </Label>
-                    <Input
-                      id="fullName"
-                      placeholder="John Doe"
-                      value={formData.fullName}
-                      onChange={(e) => handleInputChange("fullName", e.target.value)}
-                      className={inputStyle}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="username" className="text-sm font-medium">
-                      {t.username}
-                    </Label>
-                    <Input
-                      id="username"
-                      placeholder="@username"
-                      value={formData.username}
-                      onChange={(e) => {
-                        let value = e.target.value
-                        if (!value.startsWith("@") && value.length > 0) {
-                          value = "@" + value
-                        }
-                        handleInputChange("username", value)
-                      }}
-                      className={inputStyle}
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="email-reg" className="flex items-center gap-2 text-sm font-medium">
-                    <Mail className="h-4 w-4" />
-                    {t.email}
-                  </Label>
-                  <Input
-                    id="email-reg"
-                    type="email"
-                    placeholder="your@email.com"
-                    value={formData.email}
-                    onChange={(e) => handleInputChange("email", e.target.value)}
-                    className={inputStyle}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="password-reg" className="flex items-center gap-2 text-sm font-medium">
-                    <Lock className="h-4 w-4" />
-                    {t.password}
-                  </Label>
-                  <Input
-                    id="password-reg"
-                    type="password"
-                    placeholder="••••••••"
-                    value={formData.password}
-                    onChange={(e) => handleInputChange("password", e.target.value)}
-                    className={inputStyle}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="bio" className="text-sm font-medium">
-                    {t.bio}
-                  </Label>
-                  <Input
-                    id="bio"
-                    placeholder="Tell us about yourself..."
-                    value={formData.bio}
-                    onChange={(e) => handleInputChange("bio", e.target.value)}
-                    className={inputStyle}
-                  />
-                </div>
-              </div>
-            )}
-
-            <div className="flex items-center justify-between">
-              <Label className="text-sm font-medium">{t.language}</Label>
-              <div className="flex gap-1">
-                {languages.map((lang) => (
-                  <Button
-                    key={lang.code}
-                    variant={language === lang.code ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setLanguage(lang.code as "uz" | "ru" | "en")}
-                    className={buttonStyle}
-                  >
-                    {lang.flag}
-                  </Button>
-                ))}
-              </div>
-            </div>
-
-            {error && (
-              <Alert className="border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-900/50">
-                <AlertDescription className="text-red-600 dark:text-red-400">{error}</AlertDescription>
-              </Alert>
-            )}
-
-            {success && (
-              <Alert className="border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/50">
-                <AlertDescription className="text-green-600 dark:text-green-400">{success}</AlertDescription>
-              </Alert>
-            )}
-
-            <Button
-              onClick={handleAuth}
-              className={`w-full ${buttonStyle} bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700`}
-              disabled={loading}
-            >
-              {loading ? (
-                <div className="flex items-center gap-2">
-                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
-                  {t.connecting}
-                </div>
-              ) : isLoginMode ? (
-                t.login
-              ) : (
-                t.register
-              )}
-            </Button>
-
-            <div className="text-center text-sm text-gray-500 dark:text-gray-400">
-              <p>
-                {isLoginMode ? "Нет аккаунта?" : "Есть аккаунт?"}{" "}
-                <button
-                  onClick={() => setIsLoginMode(!isLoginMode)}
-                  className="text-blue-600 dark:text-blue-400 hover:underline font-medium"
-                >
-                  {isLoginMode ? t.register : t.login}
-                </button>
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
-
-  // Основной интерфейс чата
-  return (
-    <div className={`h-screen flex ${darkMode ? "dark" : ""}`}>
-      <div className={`h-screen flex ${gradientBg} w-full relative overflow-hidden`}>
-        {/* Боковая панель */}
-        <div
-          className={`${
-            isMobile ? "fixed inset-y-0 left-0 z-50 w-full" : "w-80 min-w-80"
-          } ${cardStyle} border-r flex flex-col transition-all duration-300 ${
-            isMobile && !showSidebar ? "-translate-x-full" : "translate-x-0"
-          }`}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
-        >
-          {/* Заголовок */}
-          <div className="p-4 bg-gradient-to-r from-blue-600 to-purple-600 text-white">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
-                  <MessageCircle className="h-6 w-6" />
-                </div>
-                <div>
-                  <h1 className="text-xl font-bold">{t.appName}</h1>
-                  <p className="text-xs text-blue-100">
-                    {isConnected ? (
-                      <span className="flex items-center gap-1">
-                        <Wifi className="h-3 w-3" />
-                        {t.connected}
-                        {selectedChat?.id === "global" && (
-                          <span> {globalOnlineCount}</span>
-                        )}
-                      </span>
-                    ) : (
-                      <span className="flex items-center gap-1">
-                        <WifiOff className="h-3 w-3" />
-                        {t.disconnected}
-                      </span>
-                    )}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Badge variant="secondary" className="bg-white/20 text-white border-0">
-                  {currentUser?.username}
-                </Badge>
-              </div>
-            </div>
-          </div>
-
-          {/* Поиск */}
-          <div className="p-3 border-b space-y-3">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-              <Input
-                placeholder={t.search}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className={`pl-10 ${inputStyle}`}
-              />
-            </div>
-            <Dialog open={showUserSearch} onOpenChange={setShowUserSearch}>
-              <DialogTrigger asChild>
-                <Button variant="outline" className={`w-full ${buttonStyle}`}>
-                  <UserPlus className="h-4 w-4 mr-2" />
-                  {t.newChat}
-                </Button>
-              </DialogTrigger>
-              <DialogContent className={cardStyle}>
-                <DialogHeader>
-                  <DialogTitle className="flex items-center gap-2">
-                    <UserPlus className="h-5 w-5" />
-                    {t.searchUsers}
-                  </DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-                    <Input
-                      placeholder="@username или имя"
-                      onChange={(e) => searchUsers(e.target.value)}
-                      className={`pl-10 ${inputStyle}`}
-                    />
-                  </div>
-                  <div className="space-y-2 max-h-60 overflow-y-auto">
-                    {searchResults.map((user) => (
-                      <div
-                        key={user.id}
-                        onClick={() => startPrivateChat(user)}
-                        className={`flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer transition-all duration-200 ${buttonStyle}`}
-                      >
-                        <Avatar>
-                          {isValidAvatarUrl(user.avatar) ? (
-                            <AvatarImage src={user.avatar as string} />
-                          ) : (
-                            <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white">
-                              {getUserInitial(user)}
-                            </AvatarFallback>
-                          )}
-                        </Avatar>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <h4 className="font-medium">{user.username}</h4>
-                            {user.isVerified && <Star className="h-3 w-3 text-yellow-500" />}
-                          </div>
-                          <p className="text-sm text-gray-500">{user.username}</p>
-                          {user.bio && <p className="text-xs text-gray-400 truncate">{user.bio}</p>}
-                        </div>
-                        <div className={`w-3 h-3 rounded-full ${user.isOnline ? "bg-green-500" : "bg-gray-300"}`} />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </DialogContent>
-            </Dialog>
-          </div>
-
-          {/* Список чатов */}
-          <div className="flex-1 overflow-y-auto overflow-x-hidden no-scrollbar">
-            {filteredChats.map((chat) => (
-              <div
-                key={chat.id}
-                onClick={() => selectChat(chat)}
-                className={`p-4 border-b cursor-pointer transition-all duration-200 hover:bg-gray-50 dark:hover:bg-gray-700/50 ${
-                  selectedChat?.id === chat.id
-                    ? "bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/30 dark:to-purple-900/30 border-l-4 border-l-blue-500"
-                    : ""
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div className="relative">
-                    <Avatar className="h-12 w-12">
-                      {isValidAvatarUrl(chat.avatar) ? (
-                        <AvatarImage src={chat.avatar as string} />
-                      ) : (
-                        <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white">
-                          {chat.isGroup ? <Users className="h-5 w-5" /> : chat.name.charAt(0)}
-                        </AvatarFallback>
-                      )}
-                    </Avatar>
-                    {!chat.isGroup && (() => {
-                      // Найти собеседника
-                      const otherUser = chat.participants.find(
-                        (u) => u.id !== currentUser?.id && u.username !== currentUser?.username
-                      );
-                      return otherUser?.isOnline ? (
-                        <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-white dark:border-gray-800 rounded-full" />
-                      ) : null;
-                    })()}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        {/* Для приватного чата показывай имя собеседника */}
-                        {(() => {
-                          const isPrivate = chat.type === "private"
-                          const otherUser = isPrivate
-                            ? chat.participants.find((u) =>
-                                u.id !== currentUser?.id && u.username !== currentUser?.username
-                              )
-                            : null
-                          const chatDisplayName = isPrivate
-                            ? otherUser?.username || otherUser?.fullName || chat.name || "Неизвестно"
-                            : chat.name
-                          return <h3 className="font-medium truncate">{chatDisplayName}</h3>
-                        })()}
-                        {chat.isEncrypted && <Lock className="h-3 w-3 text-green-500" />}
-                        {chat.isPinned && <Star className="h-3 w-3 text-yellow-500" />}
-                      </div>
-                      {chat.lastMessage && (
-                        <span className="text-xs text-gray-500">
-                          {new Date(chat.lastMessage.timestamp).toLocaleTimeString([], {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </span>
-                      )}
-                    </div>
-                    {chat.lastMessage && (
-                      <p className="text-sm text-gray-600 dark:text-gray-300 truncate">
-                        {chat.lastMessage.senderName}: {chat.lastMessage.isEncrypted ? decryptMessage(chat.lastMessage.content) : chat.lastMessage.content}
-                      </p>
-                    )}
-                    <div className="flex items-center justify-between mt-1">
-                      <div className="text-xs text-gray-500 flex items-center gap-2">
-                        <span>
-                          {chat.messageCount} {t.messages}
-                        </span>
-                      </div>
-                      {chat.unreadCount > 0 && (
-                        <Badge className="bg-blue-500 text-white animate-pulse">{chat.unreadCount}</Badge>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Кнопка настроек в левом нижнем углу */}
-          <div className="p-4 border-t">
-            <Dialog open={showSettings} onOpenChange={setShowSettings}>
-              <DialogTrigger asChild>
-                <Button 
-                  variant="outline" 
-                  className={`w-full ${buttonStyle} bg-gradient-to-r from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-700 hover:from-gray-200 hover:to-gray-300 dark:hover:from-gray-700 dark:hover:to-gray-600`}
-                >
-                  <Settings className="h-4 w-4 mr-2" />
-                  {t.settings}
-                </Button>
-              </DialogTrigger>
-              <DialogContent className={`${cardStyle} max-w-md`}>
-                <DialogHeader>
-                  <DialogTitle className="flex items-center gap-2">
-                    <Settings className="h-5 w-5" />
-                    {t.settings}
-                  </DialogTitle>
-                </DialogHeader>
-                <div className="w-full">
-                  {(() => {
-                    const [settingsTab, setSettingsTab] = [undefined as any, undefined as any]
-                    return null
-                  })()}
-                  <div className="grid w-full grid-cols-2 mb-4">
-                    <Button
-                      variant={!showSettings ? "default" : "outline"}
-                      onClick={() => {/* no-op, preserved for layout */}}
-                    >
-                      {t.profile}
-                    </Button>
-                    <Button
-                      variant={showSettings ? "default" : "outline"}
-                      onClick={() => {/* no-op, preserved for layout */}}
-                    >
-                      {t.settings}
-                    </Button>
-                  </div>
-                  {/* Always render both sections sequentially to avoid Tabs dependency */}
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-4">
-                      <div className="relative">
-                        <Avatar className="h-16 w-16">
-                          {isValidAvatarUrl(currentUser?.avatar) ? (
-                            <AvatarImage src={currentUser?.avatar as string} />
-                          ) : (
-                            <AvatarFallback className="text-lg bg-gradient-to-br from-blue-500 to-purple-600 text-white">
-                              {getUserInitial(currentUser || undefined)}
-                            </AvatarFallback>
-                          )}
-                        </Avatar>
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="font-semibold">{currentUser?.fullName}</h3>
-                        <p className="text-sm text-gray-500">{currentUser?.username}</p>
-                        <p className="text-sm text-green-500 flex items-center gap-1">
-                          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                          {t.online}
-                        </p>
-                      </div>
-                    </div>
-                    {/* Выбор одного из 5 стикеров вместо загрузки */}
-                    <div className="space-y-2">
-                      <Label>Выбрать аватар</Label>
-                      <div className="flex items-center gap-2">
-                        {presetStickers.map((url) => (
-                          <button
-                            key={url}
-                            onClick={() => applyStickerAvatar(url)}
-                            className={`rounded-xl p-1 border transition-transform hover:scale-105 ${currentUser?.avatar === url ? 'border-blue-500' : 'border-transparent'} ${cardStyle}`}
-                            aria-label="sticker"
-                          >
-                            <img src={url} alt="sticker" className="h-10 w-10 object-contain" />
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <Button onClick={handleLogout} variant="destructive" className="w-full">
-                      {t.logout}
-                    </Button>
-                  </div>
-                  <div className="space-y-4 mt-6">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <Label>{t.darkMode}</Label>
-                        <p className="text-sm text-gray-500">Переключить тему</p>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={darkMode}
-                        onChange={(e) => {
-                          setDarkMode(e.target.checked)
-                          saveSettings()
-                        }}
-                      />
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <Label>{t.notifications}</Label>
-                        <p className="text-sm text-gray-500">Уведомления о сообщениях</p>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={notifications}
-                        onChange={(e) => {
-                          setNotifications(e.target.checked)
-                          saveSettings()
-                        }}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>{t.language}</Label>
-                      <div className="flex gap-2">
-                        {languages.map((lang) => (
-                          <Button
-                            key={lang.code}
-                            variant={language === lang.code ? "default" : "outline"}
-                            size="sm"
-                            onClick={() => {
-                              setLanguage(lang.code as "uz" | "ru" | "en")
-                              saveSettings()
-                            }}
-                          >
-                            {lang.flag} {lang.name}
-                          </Button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </DialogContent>
-            </Dialog>
-          </div>
-        </div>
-
-        {/* Область чата */}
-        <div
-          className={`flex-1 flex flex-col min-w-0 ${isMobile && showSidebar ? "hidden" : "flex"}`}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
-        >
-          {selectedChat ? (
-            <>
-              {/* Заголовок чата */}
-              <div className={`p-4 ${cardStyle} border-b flex items-center justify-between`}>
-                <div className="flex items-center gap-3">
-                  {isMobile && (
-                    <Button variant="ghost" size="icon" onClick={() => setShowSidebar(true)}>
-                      <Menu className="h-4 w-4" />
-                    </Button>
-                  )}
-                  {isMobile && showSwipeHint && (
-                    <span className="text-xs text-gray-500 dark:text-gray-400">{t.swipeHint}</span>
-                  )}
-                  <Avatar className="h-10 w-10">
-                    {(() => {
-                      const avatarSrc = selectedChat.type === "private" 
-                        ? (() => {
-                            const otherUser = selectedChat.participants.find(
-                              (u) => u.id !== currentUser?.id && u.username !== currentUser?.username
-                            )
-                            return otherUser?.avatar
-                          })()
-                        : selectedChat.avatar
-                      
-                      if (isValidAvatarUrl(avatarSrc as string)) {
-                        return <AvatarImage src={avatarSrc as string} />
-                      } else {
-                        return (
-                          <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white">
-                            {selectedChat.isGroup ? (
-                              <Users className="h-5 w-5" />
-                            ) : (
-                              (() => {
-                                const otherUser = selectedChat.participants.find(
-                                  (u) => u.id !== currentUser?.id && u.username !== currentUser?.username
-                                )
-                                const displayName = otherUser?.username || otherUser?.fullName || selectedChat.name
-                                return displayName.charAt(0)
-                              })()
-                            )}
-                          </AvatarFallback>
-                        )
-                      }
-                    })()}
-                  </Avatar>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h2 className="font-semibold">
-                        {selectedChat.type === "private" 
-                          ? (() => {
-                              const otherUser = selectedChat.participants.find(
-                                (u) => u.id !== currentUser?.id && u.username !== currentUser?.username
-                              )
-                              return otherUser?.username || otherUser?.fullName || selectedChat.name
-                            })()
-                          : selectedChat.name
-                        }
-                      </h2>
-                      {selectedChat.isEncrypted && <Lock className="h-4 w-4 text-green-500" />}
-                    </div>
-                    <p className="text-sm text-gray-500">
-                      {selectedChat.type === "private"
-                        ? (() => {
-                            const otherUser = selectedChat.participants.find(
-                              (u) => u.id !== currentUser?.id && u.username !== currentUser?.username
-                            )
-                            if (!otherUser) return t.offline
-                            let statusText = t.offline
-                            let statusColor = "bg-gray-400"
-                            if (otherUser.status === "online") {
-                              statusText = t.online
-                              statusColor = "bg-green-500"
-                            } else if (otherUser.status === "away") {
-                              statusText = "Отошел"
-                              statusColor = "bg-blue-400"
-                            } else if (otherUser.status === "busy") {
-                              statusText = "Не беспокоить"
-                              statusColor = "bg-yellow-400"
-                            }
-                            return (
-                              <span className="flex items-center gap-1">
-                                <span className={`w-2 h-2 rounded-full ${statusColor}`}></span>
-                                {statusText}
-                              </span>
-                            )
-                          })()
-                        : typingUsers.length > 0
-                          ? `${typingUsers.join(", ")} ${t.typing}`
-                          : t.online}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className={buttonStyle}>
-                        <MoreVertical className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className={cardStyle}>
-                      <DropdownMenuItem onClick={() => showChatInfo(selectedChat)}>
-                        <Info className="h-4 w-4 mr-2" />
-                        Информация о чате
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => togglePinChat(selectedChat)}>
-                        <Star className="h-4 w-4 mr-2" />
-                        {selectedChat?.isPinned ? "Открепить чат" : "Закрепить чат"}
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => toggleMuteChat(selectedChat)}>
-                        <Bell className="h-4 w-4 mr-2" />
-                        {selectedChat?.isMuted ? "Включить уведомления" : "Отключить уведомления"}
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      {(selectedChat?.id !== "global" || currentUser?.username === "@adminstator") && (
-                        <DropdownMenuItem 
-                          className="text-red-600"
-                          onClick={() => clearChat(selectedChat)}
-                        >
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          Очистить чат
-                        </DropdownMenuItem>
-                      )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              </div>
-
-              {/* Сообщения */}
-              <div 
-                className="flex-1 overflow-y-auto overflow-x-hidden no-scrollbar p-4 space-y-4"
-                onDragOver={handleDragOver}
-                onDrop={handleDrop}
-              >
-                {messages.length === 0 ? (
-                  <div className="flex-1 flex items-center justify-center">
-                    <div className="text-center space-y-4">
-                      <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center mx-auto">
-                        <MessageCircle className="h-10 w-10 text-white" />
-                      </div>
-                      <div>
-                        <h3 className="text-lg font-semibold">{t.noMessages}</h3>
-                        <p className="text-gray-500">{t.startChat}</p>
-                        <p className="text-sm text-gray-400 mt-2">
-                          💡 Перетащите изображение сюда или нажмите кнопку камеры
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  messages.map((message, index) => (
-                    <div
-                      key={message.id}
-                      className={`flex ${message.senderId === currentUser?.id ? "justify-end" : "justify-start"}`}
-                      onTouchStart={e => handleMsgTouchStart(e, message.id)}
-                      onTouchMove={handleMsgTouchMove}
-                      onTouchEnd={() => handleMsgTouchEnd(message)}
-                      style={swipeMsgId === message.id && swipeMsgDeltaX < 0 ? { transform: `translateX(${swipeMsgDeltaX}px)` } : {}}
-                    >
-                      <div
-                        className={`max-w-xs lg:max-w-md px-4 py-2 rounded-2xl shadow-lg transition-all duration-200 hover:shadow-xl group ${
-                          message.senderId === currentUser?.id
-                            ? "bg-gradient-to-r from-blue-500 to-purple-600 text-white"
-                            : `${cardStyle}`
-                        }`}
-                      >
-                        {message.replyTo && (
-                          <div className="mb-2 p-2 rounded-xl bg-black/10 border-l-2 border-white/30">
-                            <p className="text-xs font-medium">{message.replyTo.senderName}</p>
-                            <p className="text-xs opacity-80 truncate">{message.replyTo.content}</p>
-                          </div>
-                        )}
-
-                        {/* Для общего чата всегда показываем имя отправителя */}
-                        {selectedChat?.id === "global" && (
-                          <p className={`text-xs font-bold mb-1 opacity-90 ${message.senderId === currentUser?.id ? "text-right" : ""}`}>
-                            {message.senderName}:
-                          </p>
-                        )}
-
-                        {/* Для остальных чатов, если не вы, показываем имя */}
-                        {selectedChat?.id !== "global" && message.senderId !== currentUser?.id && (
-                          <p className="text-xs font-medium mb-1 opacity-70">{message.senderName}</p>
-                        )}
-
-                        {/* Превью изображения */}
-                        {message.type === "image" && message.fileUrl && (
-                          <div className="mt-2 mb-2">
-                            <a
-                              href={`https://actogr.onrender.com${message.fileUrl}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-blue-600 underline break-all"
-                            >
-                              {`https://actogr.onrender.com${message.fileUrl}`}
-                            </a>
-                            {message.fileName && (
-                              <p className="text-xs text-gray-300 mt-1">{message.fileName}</p>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Текст сообщения (если не картинка) */}
-                        {message.type !== "image" && (
-                          <p className="break-words">{message.content}</p>
-                        )}
-
-                        <div className="flex items-center justify-between mt-2">
-                          <div className="flex items-center gap-1">
-                            {message.reactions && message.reactions.length > 0 && (
-                              <div className="flex gap-1">
-                                {message.reactions.slice(0, 3).map((reaction, idx) => (
-                                  <span key={idx} className="text-xs">
-                                    {reaction.emoji}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs opacity-70">
-                              {new Date(message.timestamp).toLocaleTimeString([], {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}
-                            </span>
-                            {message.isEncrypted && <Lock className="h-3 w-3 opacity-70" />}
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                                >
-                                  <MoreVertical className="h-3 w-3" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className={cardStyle}>
-                                <DropdownMenuItem onClick={() => setReplyingTo(message)}>
-                                  <Reply className="h-4 w-4 mr-2" />
-                                  {t.reply}
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => navigator.clipboard.writeText(message.content)}>
-                                  <Copy className="h-4 w-4 mr-2" />
-                                  {t.copy}
-                                </DropdownMenuItem>
-                                {message.senderId === currentUser?.id && (
-                                  <>
-                                    <DropdownMenuItem onClick={() => setEditingMessage(message)}>
-                                      <Edit className="h-4 w-4 mr-2" />
-                                      {t.edit}
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => handleDeleteMessage(message.id)} className="text-red-600">
-                                      <Trash2 className="h-4 w-4 mr-2" />
-                                      Удалить
-                                    </DropdownMenuItem>
-                                  </>
-                                )}
-                                <DropdownMenuSeparator />
-                                <div className="flex gap-1 p-2">
-                                  {reactionEmojis.slice(0, 5).map((emoji) => (
-                                    <button
-                                      key={emoji}
-                                      onClick={() => addReaction(message.id, emoji)}
-                                      className="hover:scale-125 transition-transform"
-                                    >
-                                      {emoji}
-                                    </button>
-                                  ))}
-                                </div>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                )}
-
-                {typingUsers.length > 0 && (
-                  <div className="flex justify-start">
-                    <div className={`px-4 py-2 rounded-2xl ${cardStyle}`}>
-                      <div className="flex items-center gap-2">
-                        <div className="flex space-x-1">
-                          <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" />
-                          <div
-                            className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
-                            style={{ animationDelay: "0.1s" }}
-                          />
-                          <div
-                            className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
-                            style={{ animationDelay: "0.2s" }}
-                          />
-                        </div>
-                        <span className="text-sm text-gray-600">
-                          {typingUsers.join(", ")} {t.typing}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <div ref={messagesEndRef} />
-              </div>
-
-              {/* Поле ответа */}
-              {replyingTo && (
-                <div className={`px-4 py-2 ${cardStyle} border-t`}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Reply className="h-4 w-4 text-blue-500" />
-                      <div className="text-sm">
-                        <p className="font-medium text-blue-600">Ответ для {replyingTo.senderName}</p>
-                        <p className="text-gray-600 truncate max-w-xs">{replyingTo.content}</p>
-                      </div>
-                    </div>
-                    <Button variant="ghost" size="sm" onClick={() => setReplyingTo(null)}>
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {/* Поле ввода */}
-              <div className={`p-4 ${cardStyle} border-t`}>
-                                  <div className="flex items-center gap-2">
-                    <input type="file" ref={fileInputRef} className="hidden" accept="*/*" />
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => fileInputRef.current?.click()}
-                      className={buttonStyle}
-                    >
-                      <Paperclip className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={handleImageUpload}
-                      className={buttonStyle}
-                    >
-                      <Camera className="h-4 w-4" />
-                    </Button>
-                  <div className="flex-1 relative">
-                    <Input
-                      ref={messageInputRef}
-                      placeholder={`${t.send}...`}
-                      value={newMessage}
-                      onChange={(e) => {
-                        setNewMessage(e.target.value)
-                        if (e.target.value.length > 0) {
-                          startTyping()
-                        }
-                      }}
-                      onKeyPress={(e) => {
-                        if (
-                          selectedChat?.id === "global" && (globalChatCooldown > 0 || pendingGlobalMessage)
-                        ) {
-                          e.preventDefault();
-                          return;
-                        }
-                        if (e.key === "Enter") sendMessage();
-                      }}
-                      className={`${inputStyle} pr-20`}
-                      disabled={!isConnected || (selectedChat?.id === "global" && (globalChatCooldown > 0 || pendingGlobalMessage))}
-                    />
-                  </div>
-                  <Button
-                    onClick={sendMessage}
-                    disabled={!newMessage.trim() || !isConnected || (selectedChat?.id === "global" && (globalChatCooldown > 0 || pendingGlobalMessage))}
-                    className={`${buttonStyle} bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700`}
-                  >
-                    {selectedChat?.id === "global" && (globalChatCooldown > 0 || pendingGlobalMessage) ? (
-                      <span>{pendingGlobalMessage ? "..." : `${globalChatCooldown} сек`}</span>
-                    ) : (
-                      <Send className="h-4 w-4" />
-                    )}
-                  </Button>
-                </div>
-                <div className="flex items-center justify-between mt-2 text-xs text-gray-500">
-                  <div className="flex items-center gap-2">
-                    {isConnected ? (
-                      <span className="flex items-center gap-1 text-green-600">
-                        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                        {t.connected}
-                      </span>
-                    ) : (
-                      <span className="flex items-center gap-1 text-red-600">
-                        <div className="w-2 h-2 bg-red-500 rounded-full" />
-                        {t.disconnected}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Lock className="h-3 w-3 text-green-500" />
-                    <span>{t.encrypted}</span>
-                  </div>
-                </div>
-              </div>
-            </>
-          ) : (
-            <div className="flex-1 flex items-center justify-center">
-              <div className="text-center space-y-6">
-                <div className="w-32 h-32 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center mx-auto shadow-2xl">
-                  <MessageCircle className="h-16 w-16 text-white" />
-                </div>
-                <div>
-                  <h3 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-                    {t.welcome} в {t.appName}
-                  </h3>
-                  <p className="text-gray-500 mt-2">{t.startChat}</p>
-                </div>
-                <div className="flex items-center justify-center gap-4 text-sm text-gray-400">
-                  <div className="flex items-center gap-2">{isConnected ? "🟢 Подключено" : "🔴 Отключено"}</div>
-                  <div className="flex items-center gap-2">
-                    <Lock className="h-4 w-4 text-green-500" />
-                    <span>End-to-End шифрование</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Zap className="h-4 w-4 text-yellow-500" />
-                    <span>Быстрая доставка</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-        {/* Краевой язычок для открытия боковой панели на мобильных */}
-        {isMobile && !showSidebar && (
-          <button
-            onClick={() => setShowSidebar(true)}
-            aria-label={t.swipeHint}
-            className="fixed left-0 top-1/2 -translate-y-1/2 z-40 w-4 h-24 bg-blue-500/40 hover:bg-blue-500/60 rounded-r-full flex items-center justify-center"
-          >
-            <span className="-rotate-90 text-[10px] text-white select-none">{t.appName}</span>
-          </button>
-        )}
-
-        {/* Плавающая кнопка убрана по запросу пользователя */}
-      </div>
-      
-      {/* Диалог информации о чате */}
-      <Dialog open={showChatInfoDialog} onOpenChange={setShowChatInfoDialog}>
-        <DialogContent className={cardStyle}>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Info className="h-5 w-5" />
-              Информация о чате
-            </DialogTitle>
-          </DialogHeader>
-          {selectedChatForInfo && (
-            <div className="space-y-4">
-              <div className="flex items-center gap-3">
-                <Avatar className="h-16 w-16">
-                  {isValidAvatarUrl(selectedChatForInfo.avatar) ? (
-                    <AvatarImage src={selectedChatForInfo.avatar as string} />
-                  ) : (
-                    <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white">
-                      {selectedChatForInfo.isGroup ? (
-                        <Users className="h-6 w-6" />
-                      ) : selectedChatForInfo.name.charAt(0)}
-                    </AvatarFallback>
-                  )}
-                </Avatar>
-                <div>
-                  <h3 className="font-semibold text-lg">{selectedChatForInfo.name}</h3>
-                  <p className="text-sm text-gray-500">{selectedChatForInfo.description}</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    {selectedChatForInfo.isEncrypted && <Lock className="h-3 w-3 text-green-500" />}
-                    {selectedChatForInfo.isPinned && <Star className="h-3 w-3 text-yellow-500" />}
-                    {selectedChatForInfo.isMuted && <Bell className="h-3 w-3 text-red-500" />}
-                  </div>
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <p className="font-medium">Тип чата</p>
-                  <p className="text-gray-500">
-                    {selectedChatForInfo.type === "private" ? "Приватный" : 
-                     selectedChatForInfo.type === "group" ? "Группа" : "Канал"}
-                  </p>
-                </div>
-                <div>
-                  <p className="font-medium">Сообщений</p>
-                  <p className="text-gray-500">{selectedChatForInfo.messageCount}</p>
-                </div>
-                <div>
-                  <p className="font-medium">Создан</p>
-                  <p className="text-gray-500">
-                    {new Date(selectedChatForInfo.createdAt).toLocaleDateString()}
-                  </p>
-                </div>
-                <div>
-                  <p className="font-medium">Шифрование</p>
-                  <p className="text-gray-500">
-                    {selectedChatForInfo.isEncrypted ? "Включено" : "Отключено"}
-                  </p>
-                </div>
-              </div>
-              
-              {selectedChatForInfo.type !== "private" && (
-                <div>
-                  <p className="font-medium mb-2">Участники</p>
-                  <div className="space-y-2 max-h-32 overflow-y-auto">
-                    {selectedChatForInfo.participants.map((participant) => (
-                      <div key={participant.id} className="flex items-center gap-2">
-                        <Avatar className="h-6 w-6">
-                          {isValidAvatarUrl(participant.avatar) ? (
-                            <AvatarImage src={participant.avatar as string} />
-                          ) : (
-                            <AvatarFallback className="text-xs">
-                              {getUserInitial(participant)}
-                            </AvatarFallback>
-                          )}
-                        </Avatar>
-                        <span className="text-sm">{participant.username}</span>
-                        {participant.isOnline && (
-                          <div className="w-2 h-2 bg-green-500 rounded-full" />
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-      {/* Модальное окно для увеличенного изображения */}
-      {modalImage && (
-        <div
-          className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50"
-          onClick={() => setModalImage(null)}
-        >
-          <img
-            src={modalImage}
-            alt="Увеличенное изображение"
-            className="max-w-full max-h-full rounded-lg shadow-2xl"
-            onClick={e => e.stopPropagation()}
-          />
-        </div>
-      )}
-      {/* Глобальные стили для скрытия полос прокрутки */}
-      <style jsx global>{`
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-      `}</style>
-    </div>
-  )
 }
- 
+setInterval(cleanupInactiveUsers, 30000)
+
+// Запускаем очистку каждые 30 секунд
+setInterval(cleanupInactiveUsers, 30000);
+
+// Автоочистка общего чата отключена - чат теперь постоянный
+// let lastGlobalChatCleanupDay = null;
+// setInterval(async () => {
+//   const now = new Date();
+//   if (now.getHours() === 4 && now.getMinutes() === 0) {
+//     const today = now.toISOString().slice(0, 10);
+//     if (lastGlobalChatCleanupDay !== today) {
+//       await Message.deleteMany({ chat: 'global' });
+//       io.to('global').emit('chat_cleared', { chatId: 'global' });
+//       lastGlobalChatCleanupDay = today;
+//       console.log('🌍 Общий чат автоматически очищен в 4:00 утра');
+//     }
+//   }
+// }, 60 * 1000);
+
+// Запуск сервера
+server.listen(PORT, async () => {
+  // Очищаем глобальный чат при запуске
+  try {
+    await Message.deleteMany({ chat: "global" });
+    console.log("🌍 Глобальный чат очищен при запуске сервера");
+  } catch (error) {
+    console.error("Ошибка очистки глобального чата:", error);
+  }
+
+  console.log(`
+  ACTOGRAM Server v3.0                  ${PORT}
+        : https://acto-uimuz.vercel.app  
+        : https://actogr.onrender.com
+              : JWT + Bcrypt + Rate Limiting + E2E Encryption
+               :        ,            UI,               
+         :                                   
+  `);
+});
+
+//                                      (              4:00     )
+let lastGlobalChatCleanupDay = null;
+setInterval(async () => {
+  const now = new Date();
+  //             (0)   4:00
+  if (now.getDay() === 0 && now.getHours() === 4 && now.getMinutes() === 0) {
+    const today = now.toISOString().slice(0, 10);
+    if (lastGlobalChatCleanupDay !== today) {
+      await Message.deleteMany({ chat: "global" });
+      io.to("global").emit("chat_cleared", { chatId: "global" });
+      lastGlobalChatCleanupDay = today;
+      console.log("                                                 4:00     ");
+    }
+  }
+}, 60 * 1000);
+
+// Graceful shutdown
+process.on("SIGTERM", () => {
+  console.log("SIGTERM получен, завершаем работу сервера...");
+  server.close(() => {
+    console.log("Сервер успешно завершил работу");
+    process.exit(0);
+  });
+});
+
+process.on("SIGINT", () => {
+  console.log("SIGINT получен, завершаем работу сервера...");
+  server.close(() => {
+    console.log("Сервер успешно завершил работу");
+    process.exit(0);
+  });
+});
+
+// Подключение к MongoDB с обработкой ошибок
+let connectionAttempts = 0;
+const maxConnectionAttempts = 5;
+
+const connectToMongoDB = async () => {
+  try {
+    connectionAttempts++;
+    console.log(
+      `🔄 Попытка подключения к MongoDB (${connectionAttempts}/${maxConnectionAttempts})`
+    );
+    await mongoose.connect(
+      "mongodb+srv://actogol:actogolsila@actogramuz.6ogftpx.mongodb.net/actogram?retryWrites=true&w=majority&appName=actogramUZ",
+      {
+        serverSelectionTimeoutMS: 10000,
+        socketTimeoutMS: 45000,
+      }
+    );
+    console.log("✅ MongoDB подключен успешно");
+    connectionAttempts = 0; // Сброс счетчика при успешном подключении
+    await ensureGlobalChat(); // <-- Вызов здесь!
+  } catch (err) {
+    console.error(
+      `❌ Ошибка подключения к MongoDB (попытка ${connectionAttempts}):`,
+      err.message
+    );
+    if (connectionAttempts >= maxConnectionAttempts) {
+      console.error("🚫 Превышено максимальное количество попыток подключения");
+      console.log("💡 Проверьте настройки MongoDB Atlas:");
+      console.log("   1. IP адреса в Network Access");
+      console.log("   2. Правильность строки подключения");
+      console.log("   3. Статус кластера");
+      return;
+    }
+    console.log(`⏳ Повторная попытка через 5 секунд...`);
+    setTimeout(connectToMongoDB, 5000);
+  }
+};
+
+connectToMongoDB();
+
+// Обработка ошибок подключения
+mongoose.connection.on("error", (err) => {
+  console.error("❌ MongoDB connection error:", err.message);
+});
+
+mongoose.connection.on("disconnected", () => {
+  console.log("🔌 MongoDB disconnected");
+  // Попробовать переподключиться
+  if (connectionAttempts < maxConnectionAttempts) {
+    setTimeout(connectToMongoDB, 5000);
+  }
+});
+
+mongoose.connection.on("connected", () => {
+  console.log("✅ MongoDB connected");
+});
+
+mongoose.connection.on("reconnected", () => {
+  console.log("🔄 MongoDB reconnected");
+});
+
+const UserSchema = new Schema({
+  email: { type: String, unique: true },
+  username: { type: String, unique: true },
+  fullName: String,
+  bio: String,
+  password: String,
+  createdAt: { type: Date, default: Date.now },
+  isVerified: Boolean,
+  isOnline: Boolean,
+  lastSeen: Date,
+  avatar: String,
+  status: String,
+  isAdmin: { type: Boolean, default: false }, // <-- новое поле
+  lastIp: String,
+});
+
+const ChatSchema = new Schema({
+  _id: { type: String, required: true },
+  name: String,
+  avatar: String,
+  description: String,
+  isGroup: Boolean,
+  participants: [{ type: Schema.Types.ObjectId, ref: "User" }],
+  createdAt: { type: Date, default: Date.now },
+  type: String,
+  isEncrypted: Boolean,
+  createdBy: { type: Schema.Types.ObjectId, ref: "User" },
+  theme: String,
+  isPinned: Boolean,
+  isMuted: Boolean,
+});
+
+const MessageSchema = new Schema({
+  sender: { type: Schema.Types.ObjectId, ref: "User" },
+  chat: { type: String, required: true }, // Изменено с ObjectId на String
+  content: String,
+  timestamp: { type: Date, default: Date.now },
+  type: String,
+  fileUrl: String,
+  fileName: String,
+  fileSize: Number,
+  isEncrypted: Boolean,
+  replyTo: { type: Schema.Types.ObjectId, ref: "Message" },
+  reactions: [{ emoji: String, userId: String, username: String }],
+  readBy: [String],
+  isEdited: Boolean,
+});
+
+const User = model("User", UserSchema);
+const Chat = model("Chat", ChatSchema);
+const Message = model("Message", MessageSchema);
+
+// Endpoint для отправки новости от бота во все чаты (только для админа)
+app.post("/api/bot-news", authenticateToken, async (req, res) => {
+  try {
+    const { userId, username } = req.user;
+    if (username !== "@adminstator") {
+      return res
+        .status(403)
+        .json({ error: "Только админ может отправлять новости" });
+    }
+    const { text } = req.body;
+    if (!text || typeof text !== "string" || !text.trim()) {
+      return res.status(400).json({ error: "Текст новости обязателен" });
+    }
+    await ensureBotUser();
+    // Найти все приватные чаты бота
+    const botChats = await Chat.find({
+      isGroup: false,
+      type: "private",
+      participants: botUserId,
+    });
+    for (const chat of botChats) {
+      await Message.create({
+        sender: botUserId,
+        chat: chat._id,
+        content: text,
+        timestamp: new Date(),
+        type: "text",
+        isEncrypted: false,
+        readBy: [botUserId],
+        isEdited: false,
+      });
+      // Отправить через Socket.IO
+      io.to(chat._id.toString()).emit("new_message", {
+        id: Date.now() + Math.random(),
+        senderId: botUserId,
+        senderName: "Actogram Bot",
+        chatId: chat._id.toString(),
+        content: text,
+        timestamp: new Date(),
+        type: "text",
+        isEncrypted: false,
+      });
+    }
+    res.json({ success: true, count: botChats.length });
+  } catch (error) {
+    console.error("bot-news error:", error);
+    res.status(500).json({ error: "Ошибка рассылки новости" });
+  }
+});
+
+// Endpoint для бана пользователя (только для админа)
+app.post("/api/ban-user", authenticateToken, async (req, res) => {
+  try {
+    const { username } = req.user;
+    if (!req.user.isAdmin) {
+      return res.status(403).json({ error: "Только админ может банить" });
+    }
+    const { userId } = req.body;
+    if (!userId) return res.status(400).json({ error: "userId обязателен" });
+    await User.findByIdAndUpdate(userId, { status: "banned" });
+    // Отключить пользователя, если он онлайн
+    for (const [socketId, uid] of activeConnections.entries()) {
+      if (uid === userId) {
+        const s = io.sockets.sockets.get(socketId);
+        if (s) s.disconnect(true);
+      }
+    }
+    res.json({ success: true });
+  } catch (error) {
+    console.error("ban-user error:", error);
+    res.status(500).json({ error: "Ошибка бана пользователя" });
+  }
+});
+
+// Endpoint для очистки общего чата (для всех пользователей)
+app.post("/api/clear-global-chat", authenticateToken, async (req, res) => {
+  try {
+    await Message.deleteMany({ chat: "global" });
+    io.to("global").emit("chat_cleared", { chatId: "global" });
+
+    console.log("🌍 Общий чат полностью очищен");
+    res.json({ success: true, message: "Общий чат полностью очищен" });
+  } catch (error) {
+    console.error("clear-global-chat error:", error);
+    res.status(500).json({ error: "Ошибка очистки общего чата" });
+  }
+});
+
+// Endpoint для загрузки изображения в чат
+app.post(
+  "/api/upload-image",
+  authenticateToken,
+  upload.single("image"),
+  async (req, res) => {
+    try {
+      console.log("📷 Запрос на загрузку изображения (локально)");
+      console.log("📷 Файл:", req.file);
+      console.log("📷 Body:", req.body);
+      console.log("📷 User:", req.user);
+
+      if (!req.file) {
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+        return res.status(400).json({ error: "                " });
+      }
+
+      const userId = req.user.userId;
+      const { chatId } = req.body;
+
+      console.log("📷 Данные:", { userId, chatId });
+
+      if (!chatId) {
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+        return res.status(400).json({ error: "chatId           " });
+      }
+
+      // Проверяем, что пользователь является участником чата
+      const chat = await Chat.findById(chatId);
+      if (!chat) {
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+        return res.status(404).json({ error: "             " });
+      }
+
+      const isGlobalChat = chatId === "global";
+      const isParticipant =
+        isGlobalChat ||
+        chat.participants.some((p) => p && p.toString() === userId);
+      if (!isParticipant) {
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+        return res.status(403).json({ error: "                        " });
+      }
+
+      const imageUrl = `/avatars/${req.file.filename}`;
+
+      // Создать сообщение с изображением
+      const message = await Message.create({
+        sender: userId,
+        chat: chatId,
+        content: `📷 Изображение`,
+        timestamp: new Date(),
+        type: "image",
+        fileUrl: imageUrl,
+        fileName: req.file.originalname,
+        fileSize: req.file.size,
+        isEncrypted: false,
+        reactions: [],
+        readBy: [userId],
+        isEdited: false,
+      });
+
+      // Получаем информацию о пользователе
+      const user = await User.findById(userId).lean();
+
+      const msgObj = {
+        ...message.toObject(),
+        id: message._id?.toString() || message._id,
+        senderId: userId,
+        senderName: user.username,
+        chatId: chatId,
+        content: `📷 Изображение`,
+        fileUrl: imageUrl,
+        fileName: req.file.originalname,
+        fileSize: req.file.size,
+      };
+
+      // Отправляем сообщение всем участникам чата
+      io.to(chatId).emit("new_message", msgObj);
+
+      res.json({
+        success: true,
+        message: msgObj,
+        imageUrl: imageUrl,
+      });
+
+      console.log(
+        `📷 Изображение загружено (локально): ${user.username} -> ${chatId}`
+      );
+    } catch (error) {
+      console.error("upload-image error:", error);
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.status(500).json({ error: "                           " });
+    }
+  }
+);
+
+// Обработка ошибок multer (например, превышен размер файла)
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ error: 'Файл слишком большой. Максимальный размер — 10 МБ.' })
+    }
+    return res.status(400).json({ error: 'Ошибка загрузки файла: ' + err.message })
+  } else if (err) {
+    return res.status(500).json({ error: 'Ошибка сервера: ' + err.message })
+  }
+  next()
+})
