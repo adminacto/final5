@@ -1,16 +1,13 @@
 "use client"
 
-import React from "react"
-import { useState, useEffect, useRef } from "react"
+import React, { useEffect, useState, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Label } from "@/components/ui/label"
-import { Switch } from "@/components/ui/switch"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import {
   DropdownMenu,
@@ -25,8 +22,6 @@ import {
   Settings,
   Search,
   Send,
-  Phone,
-  Video,
   MoreVertical,
   Wifi,
   WifiOff,
@@ -48,8 +43,12 @@ import {
   Star,
   Smile,
   Zap,
+  Camera,
+  Edit,
 } from "lucide-react"
 import { io, type Socket } from "socket.io-client"
+import { Base64 } from 'js-base64'
+import { useState as useStateReact } from "react"
 
 // Интерфейсы
 interface User {
@@ -178,6 +177,7 @@ const translations = {
     pro: "Pro",
     premium: "Premium",
     free: "Bepul",
+    swipeHint: "O'ngga suring yoki menyuni bosing",
   },
   ru: {
     appName: "ACTOGRAM",
@@ -243,6 +243,7 @@ const translations = {
     pro: "Про",
     premium: "Премиум",
     free: "Бесплатно",
+    swipeHint: "Свайпните вправо или нажмите меню",
   },
   en: {
     appName: "ACTOGRAM",
@@ -308,6 +309,7 @@ const translations = {
     pro: "Pro",
     premium: "Premium",
     free: "Free",
+    swipeHint: "Swipe right or tap menu",
   },
 }
 
@@ -332,7 +334,26 @@ const presetStickers = [
   "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/2728.png",   // ✨
 ]
 
-// Утилиты шифрования
+// --- BASE64 UTILS ---
+function base64Encode(bytes: Uint8Array): string {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return window.btoa(binary);
+}
+
+function base64Decode(base64: string): Uint8Array {
+  const binary = window.atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+// --- ENCRYPT/DECRYPT ---
+// Утилиты шифрования (старый рабочий вариант)
 const encryptMessage = (message: string): string => {
   return btoa(unescape(encodeURIComponent(message)))
 }
@@ -352,6 +373,7 @@ export default function ActogramChat() {
   const [chats, setChats] = useState<Chat[]>([])
   const [selectedChat, setSelectedChat] = useState<Chat | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
+  const [messagesCache, setMessagesCache] = useState<{ [chatId: string]: Message[] }>({})
   const [newMessage, setNewMessage] = useState("")
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [isLoginMode, setIsLoginMode] = useState(true)
@@ -379,7 +401,6 @@ export default function ActogramChat() {
   const [showSidebar, setShowSidebar] = useState(true)
   const [showSettings, setShowSettings] = useState(false)
   const [showUserSearch, setShowUserSearch] = useState(false)
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const [replyingTo, setReplyingTo] = useState<Message | null>(null)
   const [editingMessage, setEditingMessage] = useState<Message | null>(null)
   const [selectedTheme, setSelectedTheme] = useState("default")
@@ -387,18 +408,86 @@ export default function ActogramChat() {
   const [isRecording, setIsRecording] = useState(false)
   const [showChatInfoDialog, setShowChatInfoDialog] = useState(false)
   const [selectedChatForInfo, setSelectedChatForInfo] = useState<Chat | null>(null)
+  const [showSwipeHint, setShowSwipeHint] = useState(false)
   const [globalChatCooldown, setGlobalChatCooldown] = useState(0)
   const [pendingGlobalMessage, setPendingGlobalMessage] = useState(false)
   const [globalOnlineCount, setGlobalOnlineCount] = useState(1)
+  const [modalImage, setModalImage] = useStateReact<string | null>(null)
+  // --- ДОБАВЬ В ХУКИ КОМПОНЕНТА ---
+  const touchStartX = useRef<number | null>(null);
+  const [touchDeltaX, setTouchDeltaX] = useState(0);
+  // --- ДОБАВЬ ВНУТРИ КОМПОНЕНТА ---
+  // Для отслеживания свайпа по сообщению
+  const [swipeMsgId, setSwipeMsgId] = useState<string | null>(null);
+  const [swipeMsgDeltaX, setSwipeMsgDeltaX] = useState(0);
+  const swipeMsgStartX = useRef<number | null>(null);
+  const [editedText, setEditedText] = useState("");
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (!isMobile) return;
+    touchStartX.current = e.touches[0].clientX;
+    setTouchDeltaX(0);
+  };
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isMobile || touchStartX.current === null) return;
+    const deltaX = e.touches[0].clientX - touchStartX.current;
+    setTouchDeltaX(deltaX);
+  };
+  const handleTouchEnd = () => {
+    if (!isMobile) return;
+    if (touchDeltaX > 60) {
+      setShowSidebar(true);
+    } else if (touchDeltaX < -60 && showSidebar) {
+      setShowSidebar(false);
+    }
+    touchStartX.current = null;
+    setTouchDeltaX(0);
+  };
+
+  const handleMsgTouchStart = (e: React.TouchEvent, msgId: string) => {
+    if (!isMobile) return;
+    swipeMsgStartX.current = e.touches[0].clientX;
+    setSwipeMsgId(msgId);
+    setSwipeMsgDeltaX(0);
+  };
+  const handleMsgTouchMove = (e: React.TouchEvent) => {
+    if (!isMobile || swipeMsgStartX.current === null) return;
+    const deltaX = e.touches[0].clientX - swipeMsgStartX.current;
+    setSwipeMsgDeltaX(deltaX);
+  };
+  const handleMsgTouchEnd = (message: Message) => {
+    if (!isMobile) return;
+    if (swipeMsgDeltaX < -50 && message.senderId !== currentUser?.id) {
+      setReplyingTo(message);
+    }
+    swipeMsgStartX.current = null;
+    setSwipeMsgId(null);
+    setSwipeMsgDeltaX(0);
+  };
 
   // Refs
   const socketRef = useRef<Socket | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const messageInputRef = useRef<HTMLInputElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const t = translations[language]
+
+  // Безопасная проверка URL аватара и буква-инициал для фолбэка
+  const isValidAvatarUrl = (url?: string) => {
+    if (!url || url === "null" || url === "undefined") return false
+    if (url.startsWith("data:") || url.startsWith("blob:") || url.startsWith("/")) return true
+    try {
+      const u = new URL(url)
+      return u.protocol === "http:" || u.protocol === "https:"
+    } catch {
+      return false
+    }
+  }
+  const getUserInitial = (user?: User) =>
+    user?.username?.replace(/^@/, "").charAt(0)?.toUpperCase() ||
+    user?.fullName?.charAt(0)?.toUpperCase() || "?"
 
   // Проверка мобильного устройства
   useEffect(() => {
@@ -429,6 +518,15 @@ export default function ActogramChat() {
       console.log("🔍 Загружен пользователь из localStorage:", user)
       setCurrentUser(user)
       setIsAuthenticated(true)
+    }
+    // Показываем подсказку о свайпе один раз на мобильных
+    const hintShown = localStorage.getItem("actogram_swipe_hint_shown")
+    if (!hintShown && window.innerWidth < 768) {
+      setShowSwipeHint(true)
+      setTimeout(() => {
+        setShowSwipeHint(false)
+        localStorage.setItem("actogram_swipe_hint_shown", "1")
+      }, 4000)    
     }
   }, [])
 
@@ -570,6 +668,7 @@ export default function ActogramChat() {
     })
 
     socket.on("chat_messages", (data: { chatId: string; messages: Message[] }) => {
+      setMessagesCache(prev => ({ ...prev, [data.chatId]: data.messages }))
       if (data.chatId === selectedChat?.id) {
         setMessages(data.messages)
       }
@@ -642,6 +741,22 @@ export default function ActogramChat() {
     }))
   }
 
+  // Удаление/редактирование сообщений (перемещено внутрь компонента)
+  const handleDeleteMessage = (messageId: string) => {
+    if (!socketRef.current) return
+    socketRef.current.emit("delete_message", { messageId })
+  }
+
+  const handleEditMessage = () => {
+    if (!editingMessage || !socketRef.current) return
+    socketRef.current.emit("edit_message", {
+      messageId: editingMessage.id,
+      newContent: editedText,
+    })
+    setEditingMessage(null)
+    setEditedText("")
+  }
+
   const handleAuth = async () => {
     setLoading(true)
     setError("")
@@ -654,6 +769,7 @@ export default function ActogramChat() {
           action: isLoginMode ? "login" : "register",
           ...formData,
         }),
+        credentials: "include",
       })
 
       const data = await response.json()
@@ -711,15 +827,22 @@ export default function ActogramChat() {
   const loadChats = async () => {
     if (!currentUser) return
     
+    console.log("📋 Загружаем чаты для пользователя:", currentUser.id, currentUser.username)
+    
     try {
       // Загружаем чаты через REST API
       const token = localStorage.getItem("actogram_token")
+      console.log("🔑 Токен из localStorage:", token ? "есть" : "нет")
+      
       const response = await fetch("https://actogr.onrender.com/api/chats", {
         headers: {
           "Authorization": `Bearer ${token}`,
           "Content-Type": "application/json"
-        }
+        },
+        credentials: "include",
       })
+      
+      console.log("📋 Ответ сервера:", response.status, response.statusText)
       
       if (response.ok) {
         const chats = await response.json()
@@ -737,6 +860,8 @@ export default function ActogramChat() {
         setChats(decryptedChats)
       } else {
         console.error("❌ Ошибка загрузки чатов:", response.status)
+        const errorText = await response.text()
+        console.error("❌ Текст ошибки:", errorText)
       }
     } catch (error) {
       console.error("❌ Ошибка загрузки чатов:", error)
@@ -744,6 +869,7 @@ export default function ActogramChat() {
     
     // Также запрашиваем через Socket.IO для обновления в реальном времени
     if (socketRef.current && currentUser) {
+      console.log("🔌 Запрашиваем чаты через Socket.IO")
       socketRef.current.emit("get_my_chats", currentUser.id)
     }
   }
@@ -751,35 +877,40 @@ export default function ActogramChat() {
   const loadMessages = async (chatId: string) => {
     if (!currentUser) return
     
+    console.log("📨 Загружаем сообщения для чата:", chatId)
+    
     try {
-      // Загружаем сообщения через REST API
       const token = localStorage.getItem("actogram_token")
       const response = await fetch(`https://actogr.onrender.com/api/messages/${chatId}`, {
         headers: {
           "Authorization": `Bearer ${token}`,
           "Content-Type": "application/json"
-        }
+        },
+        credentials: "include",
       })
+      
+      console.log("📨 Ответ сервера для сообщений:", response.status, response.statusText)
       
       if (response.ok) {
         const messages = await response.json()
         console.log("🔍 Загружены сообщения из API:", messages)
         setMessages(messages)
+        setMessagesCache(prev => ({ ...prev, [chatId]: messages }))
       } else {
         console.error("❌ Ошибка загрузки сообщений:", response.status)
+        const errorText = await response.text()
+        console.error("❌ Текст ошибки:", errorText)
       }
     } catch (error) {
       console.error("❌ Ошибка загрузки сообщений:", error)
     }
-    
-    // Также запрашиваем через Socket.IO для обновления в реальном времени
     if (socketRef.current && currentUser) {
       socketRef.current.emit("get_messages", { chatId, userId: currentUser.id })
     }
   }
 
   const sendMessage = () => {
-    if (!newMessage.trim() || !selectedChat || !currentUser || !socketRef.current) return;
+    if (!newMessage || !selectedChat || !currentUser || !socketRef.current) return;
 
     if (selectedChat.id === "global") {
       if (globalChatCooldown > 0 || pendingGlobalMessage) return;
@@ -790,13 +921,13 @@ export default function ActogramChat() {
       currentUser: currentUser,
       currentUserId: currentUser?.id,
       selectedChat: selectedChat,
-      newMessage: newMessage.trim(),
+      newMessage: newMessage,
       socketRef: !!socketRef.current
     })
     
-    if (!newMessage.trim() || !selectedChat || !currentUser || !socketRef.current) {
+    if (!newMessage || !selectedChat || !currentUser || !socketRef.current) {
       console.log("❌ Не удается отправить сообщение:", {
-        hasMessage: !!newMessage.trim(),
+        hasMessage: !!newMessage,
         hasChat: !!selectedChat,
         hasUser: !!currentUser,
         hasSocket: !!socketRef.current
@@ -805,14 +936,14 @@ export default function ActogramChat() {
     }
 
     console.log("📤 Отправка сообщения:", {
-      content: newMessage.trim(),
+      content: newMessage,
       chatId: selectedChat.id,
       userId: currentUser.id,
       username: currentUser.username
     })
 
     const messageData = {
-      content: encryptMessage(newMessage.trim()),
+      content: encryptMessage(newMessage),
       chatId: selectedChat.id,
       type: "text",
       isEncrypted: true,
@@ -835,12 +966,17 @@ export default function ActogramChat() {
     setSelectedChat(chat)
     setReplyingTo(null)
     setEditingMessage(null)
+    // Сначала показываем сообщения из кэша (если есть)
+    if (messagesCache[chat.id]) {
+      setMessages(messagesCache[chat.id])
+    } else {
+      setMessages([])
+    }
     loadMessages(chat.id)
     if (isMobile) setShowSidebar(false)
     if (socketRef.current) {
       socketRef.current.emit("join_chat", chat.id)
     }
-    // ВАЖНО: выводим участников в консоль для отладки
     console.log("Участники выбранного чата:", chat.participants)
   }
 
@@ -937,6 +1073,102 @@ export default function ActogramChat() {
     })
   }
 
+  const sendImage = async (file: File) => {
+    if (!selectedChat || !currentUser) {
+      console.log('❌ Нет выбранного чата или пользователя')
+      return
+    }
+    
+    console.log('📷 Начинаем загрузку изображения:', {
+      fileName: file.name,
+      fileSize: file.size,
+      fileType: file.type,
+      selectedChat: selectedChat.id,
+      currentUser: currentUser.username
+    })
+    
+    // Показываем индикатор загрузки
+    setSuccess('📤 Отправляем изображение...')
+    
+    const formData = new FormData()
+    formData.append('image', file)
+    formData.append('chatId', selectedChat.id)
+    
+    try {
+      console.log('📤 Отправляем запрос на сервер...')
+      const token = localStorage.getItem("actogram_token")
+      console.log('🔑 Токен:', token)
+      console.log('📤 chatId:', selectedChat.id)
+      console.log('📤 file:', file)
+      const response = await fetch('https://actogr.onrender.com/api/upload-image', {
+        method: 'POST',
+        headers: {
+          "Authorization": `Bearer ${token}`,
+        },
+        body: formData,
+        credentials: 'include',
+      })
+      
+      console.log('📥 Ответ сервера:', response.status, response.statusText)
+      const responseText = await response.text()
+      console.log('📥 Текст ответа сервера:', responseText)
+      let data = {}
+      try { data = JSON.parse(responseText) } catch {}
+      
+      if (response.ok) {
+        console.log('📷 Изображение загружено:', data)
+        setSuccess('📷 Фото отправлено!')
+      } else {
+        console.error('❌ Ошибка сервера:', data)
+        setError((data as any).error || 'Ошибка загрузки изображения')
+      }
+    } catch (error) {
+      console.error('❌ Ошибка загрузки изображения:', error)
+      setError('Ошибка загрузки изображения')
+    }
+  }
+
+  const handleImageUpload = () => {
+    console.log('📷 Открываем диалог выбора файла...')
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = 'image/*'
+    input.multiple = false // Только одно изображение
+    input.onchange = (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0]
+      if (file) {
+        console.log('📷 Файл выбран:', file.name, file.size, file.type)
+        // Автоматически отправляем изображение
+        sendImage(file)
+        // Очищаем input для следующего использования
+        input.value = ''
+      } else {
+        console.log('❌ Файл не выбран')
+      }
+    }
+    input.click()
+  }
+
+  // Drag & Drop для изображений
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    
+    const list = (e.dataTransfer && e.dataTransfer.files) ? e.dataTransfer.files : ([] as unknown as FileList)
+    const files = Array.from(list as FileList)
+    const imageFiles = (files as File[]).filter((file) => (file as File).type?.startsWith('image/'))
+    
+    if (imageFiles.length > 0) {
+      console.log('📷 Изображение перетащено:', imageFiles[0].name)
+      sendImage(imageFiles[0] as File)
+    }
+  }
+
   // Функции для работы с чатами
   const showChatInfo = (chat: Chat | null) => {
     if (!chat) return
@@ -1003,7 +1235,7 @@ export default function ActogramChat() {
     )
   }
 
-  const applyStickerAvatar = (stickerUrl) => {
+  const applyStickerAvatar = (stickerUrl: string) => {
     if (!currentUser) return
     const updatedUser = { ...currentUser, avatar: stickerUrl }
     setCurrentUser(updatedUser)
@@ -1020,7 +1252,7 @@ export default function ActogramChat() {
   // Стили
   const gradientBg = `bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 dark:from-gray-900 dark:via-blue-900 dark:to-purple-900`
   const cardStyle = `backdrop-blur-lg bg-white/80 dark:bg-gray-800/80 border border-white/20 dark:border-gray-700/50 shadow-xl`
-  const buttonStyle = `transition-all duration-300 hover:scale-105 active:scale-95 shadow-lg hover:shadow-xl`
+  const buttonStyle = `transition-all duration-100 hover:scale-105 active:scale-95 shadow-lg hover:shadow-xl`
   const inputStyle = `backdrop-blur-sm bg-white/50 dark:bg-gray-800/50 border-2 border-transparent focus:border-blue-500 dark:focus:border-blue-400`
 
   // Проверка домена
@@ -1069,17 +1301,25 @@ export default function ActogramChat() {
           </CardHeader>
 
           <CardContent className="space-y-6">
-            <Tabs value={isLoginMode ? "login" : "register"} className="w-full">
-              <TabsList className={`grid w-full grid-cols-2 ${cardStyle}`}>
-                <TabsTrigger value="login" onClick={() => setIsLoginMode(true)} className={buttonStyle}>
-                  {t.login}
-                </TabsTrigger>
-                <TabsTrigger value="register" onClick={() => setIsLoginMode(false)} className={buttonStyle}>
-                  {t.register}
-                </TabsTrigger>
-              </TabsList>
+            <div className={`grid w-full grid-cols-2 ${cardStyle}`}>
+              <Button
+                variant={isLoginMode ? "default" : "outline"}
+                className={buttonStyle}
+                onClick={() => setIsLoginMode(true)}
+              >
+                {t.login}
+              </Button>
+              <Button
+                variant={!isLoginMode ? "default" : "outline"}
+                className={buttonStyle}
+                onClick={() => setIsLoginMode(false)}
+              >
+                {t.register}
+              </Button>
+            </div>
 
-              <TabsContent value="login" className="space-y-4 mt-6">
+            {isLoginMode ? (
+              <div className="space-y-4 mt-6">
                 <div className="space-y-2">
                   <Label htmlFor="email" className="flex items-center gap-2 text-sm font-medium">
                     <Mail className="h-4 w-4" />
@@ -1119,9 +1359,9 @@ export default function ActogramChat() {
                     </Button>
                   </div>
                 </div>
-              </TabsContent>
-
-              <TabsContent value="register" className="space-y-4 mt-6">
+              </div>
+            ) : (
+              <div className="space-y-4 mt-6">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="fullName" className="text-sm font-medium">
@@ -1194,8 +1434,8 @@ export default function ActogramChat() {
                     className={inputStyle}
                   />
                 </div>
-              </TabsContent>
-            </Tabs>
+              </div>
+            )}
 
             <div className="flex items-center justify-between">
               <Label className="text-sm font-medium">{t.language}</Label>
@@ -1271,6 +1511,9 @@ export default function ActogramChat() {
           } ${cardStyle} border-r flex flex-col transition-all duration-300 ${
             isMobile && !showSidebar ? "-translate-x-full" : "translate-x-0"
           }`}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
         >
           {/* Заголовок */}
           <div className="p-4 bg-gradient-to-r from-blue-600 to-purple-600 text-white">
@@ -1303,113 +1546,6 @@ export default function ActogramChat() {
                 <Badge variant="secondary" className="bg-white/20 text-white border-0">
                   {currentUser?.username}
                 </Badge>
-                <Dialog open={showSettings} onOpenChange={setShowSettings}>
-                  <DialogTrigger asChild>
-                    <Button variant="ghost" size="icon" className="text-white hover:bg-white/20">
-                      <Settings className="h-4 w-4" />
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className={`${cardStyle} max-w-md`}>
-                    <DialogHeader>
-                      <DialogTitle className="flex items-center gap-2">
-                        <Settings className="h-5 w-5" />
-                        {t.settings}
-                      </DialogTitle>
-                    </DialogHeader>
-                    <Tabs defaultValue="profile" className="w-full">
-                      <TabsList className="grid w-full grid-cols-2">
-                        <TabsTrigger value="profile">{t.profile}</TabsTrigger>
-                        <TabsTrigger value="settings">{t.settings}</TabsTrigger>
-                      </TabsList>
-                      <TabsContent value="profile" className="space-y-4">
-                        <div className="flex items-center gap-4">
-                          <Avatar className="h-16 w-16">
-                            {currentUser?.avatar ? (
-                              <AvatarImage src={currentUser.avatar} />
-                            ) : (
-                              <AvatarFallback className="text-lg bg-gradient-to-br from-blue-500 to-purple-600 text-white">
-                                {currentUser?.username?.charAt(1) || currentUser?.fullName?.charAt(0) || "?"}
-                              </AvatarFallback>
-                            )}
-                          </Avatar>
-                          <div className="flex-1">
-                            <h3 className="font-semibold">{currentUser?.fullName}</h3>
-                            <p className="text-sm text-gray-500">{currentUser?.username}</p>
-                            <p className="text-sm text-green-500 flex items-center gap-1">
-                              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                              {t.online}
-                            </p>
-                          </div>
-                        </div>
-                        {/* Выбор одного из 5 стикеров вместо загрузки */}
-                        <div className="space-y-2">
-                          <Label>Выбрать аватар</Label>
-                          <div className="flex items-center gap-2">
-                            {presetStickers.map((url) => (
-                              <button
-                                key={url}
-                                onClick={() => applyStickerAvatar(url)}
-                                className={`rounded-xl p-1 border transition-transform hover:scale-105 ${currentUser?.avatar === url ? 'border-blue-500' : 'border-transparent'} ${cardStyle}`}
-                                aria-label="sticker"
-                              >
-                                <img src={url} alt="sticker" className="h-10 w-10 object-contain" />
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                        <Button onClick={handleLogout} variant="destructive" className="w-full">
-                          {t.logout}
-                        </Button>
-                      </TabsContent>
-                      <TabsContent value="settings" className="space-y-4">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <Label>{t.darkMode}</Label>
-                            <p className="text-sm text-gray-500">Переключить тему</p>
-                          </div>
-                          <Switch
-                            checked={darkMode}
-                            onCheckedChange={(checked) => {
-                              setDarkMode(checked)
-                              saveSettings()
-                            }}
-                          />
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <Label>{t.notifications}</Label>
-                            <p className="text-sm text-gray-500">Уведомления о сообщениях</p>
-                          </div>
-                          <Switch
-                            checked={notifications}
-                            onCheckedChange={(checked) => {
-                              setNotifications(checked)
-                              saveSettings()
-                            }}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <Label>{t.language}</Label>
-                          <div className="flex gap-2">
-                            {languages.map((lang) => (
-                              <Button
-                                key={lang.code}
-                                variant={language === lang.code ? "default" : "outline"}
-                                size="sm"
-                                onClick={() => {
-                                  setLanguage(lang.code as "uz" | "ru" | "en")
-                                  saveSettings()
-                                }}
-                              >
-                                {lang.flag} {lang.name}
-                              </Button>
-                            ))}
-                          </div>
-                        </div>
-                      </TabsContent>
-                    </Tabs>
-                  </DialogContent>
-                </Dialog>
               </div>
             </div>
           </div>
@@ -1456,11 +1592,11 @@ export default function ActogramChat() {
                         className={`flex items-center gap-3 p-3 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer transition-all duration-200 ${buttonStyle}`}
                       >
                         <Avatar>
-                          {user.avatar ? (
-                            <AvatarImage src={user.avatar} />
+                          {isValidAvatarUrl(user.avatar) ? (
+                            <AvatarImage src={user.avatar as string} />
                           ) : (
                             <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white">
-                              {user.username?.charAt(1) || user.fullName?.charAt(0) || "?"}
+                              {getUserInitial(user)}
                             </AvatarFallback>
                           )}
                         </Avatar>
@@ -1482,7 +1618,7 @@ export default function ActogramChat() {
           </div>
 
           {/* Список чатов */}
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto overflow-x-hidden no-scrollbar">
             {filteredChats.map((chat) => (
               <div
                 key={chat.id}
@@ -1496,8 +1632,8 @@ export default function ActogramChat() {
                 <div className="flex items-center gap-3">
                   <div className="relative">
                     <Avatar className="h-12 w-12">
-                      {chat.avatar ? (
-                        <AvatarImage src={chat.avatar} />
+                      {isValidAvatarUrl(chat.avatar) ? (
+                        <AvatarImage src={chat.avatar as string} />
                       ) : (
                         <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white">
                           {chat.isGroup ? <Users className="h-5 w-5" /> : chat.name.charAt(0)}
@@ -1562,10 +1698,149 @@ export default function ActogramChat() {
               </div>
             ))}
           </div>
+
+          {/* Кнопка настроек в левом нижнем углу */}
+          <div className="p-4 border-t">
+            <Dialog open={showSettings} onOpenChange={setShowSettings}>
+              <DialogTrigger asChild>
+                <Button 
+                  variant="outline" 
+                  className={`w-full ${buttonStyle} bg-gradient-to-r from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-700 hover:from-gray-200 hover:to-gray-300 dark:hover:from-gray-700 dark:hover:to-gray-600`}
+                >
+                  <Settings className="h-4 w-4 mr-2" />
+                  {t.settings}
+                </Button>
+              </DialogTrigger>
+              <DialogContent className={`${cardStyle} max-w-md`}>
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    <Settings className="h-5 w-5" />
+                    {t.settings}
+                  </DialogTitle>
+                </DialogHeader>
+                <div className="w-full">
+                  {(() => {
+                    const [settingsTab, setSettingsTab] = [undefined as any, undefined as any]
+                    return null
+                  })()}
+                  <div className="grid w-full grid-cols-2 mb-4">
+                    <Button
+                      variant={!showSettings ? "default" : "outline"}
+                      onClick={() => {/* no-op, preserved for layout */}}
+                    >
+                      {t.profile}
+                    </Button>
+                    <Button
+                      variant={showSettings ? "default" : "outline"}
+                      onClick={() => {/* no-op, preserved for layout */}}
+                    >
+                      {t.settings}
+                    </Button>
+                  </div>
+                  {/* Always render both sections sequentially to avoid Tabs dependency */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-4">
+                      <div className="relative">
+                        <Avatar className="h-16 w-16">
+                          {isValidAvatarUrl(currentUser?.avatar) ? (
+                            <AvatarImage src={currentUser?.avatar as string} />
+                          ) : (
+                            <AvatarFallback className="text-lg bg-gradient-to-br from-blue-500 to-purple-600 text-white">
+                              {getUserInitial(currentUser || undefined)}
+                            </AvatarFallback>
+                          )}
+                        </Avatar>
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="font-semibold">{currentUser?.fullName}</h3>
+                        <p className="text-sm text-gray-500">{currentUser?.username}</p>
+                        <p className="text-sm text-green-500 flex items-center gap-1">
+                          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                          {t.online}
+                        </p>
+                      </div>
+                    </div>
+                    {/* Выбор одного из 5 стикеров вместо загрузки */}
+                    <div className="space-y-2">
+                      <Label>Выбрать аватар</Label>
+                      <div className="flex items-center gap-2">
+                        {presetStickers.map((url) => (
+                          <button
+                            key={url}
+                            onClick={() => applyStickerAvatar(url)}
+                            className={`rounded-xl p-1 border transition-transform hover:scale-105 ${currentUser?.avatar === url ? 'border-blue-500' : 'border-transparent'} ${cardStyle}`}
+                            aria-label="sticker"
+                          >
+                            <img src={url} alt="sticker" className="h-10 w-10 object-contain" />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <Button onClick={handleLogout} variant="destructive" className="w-full">
+                      {t.logout}
+                    </Button>
+                  </div>
+                  <div className="space-y-4 mt-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <Label>{t.darkMode}</Label>
+                        <p className="text-sm text-gray-500">Переключить тему</p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={darkMode}
+                        onChange={(e) => {
+                          setDarkMode(e.target.checked)
+                          saveSettings()
+                        }}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <Label>{t.notifications}</Label>
+                        <p className="text-sm text-gray-500">Уведомления о сообщениях</p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={notifications}
+                        onChange={(e) => {
+                          setNotifications(e.target.checked)
+                          saveSettings()
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t.language}</Label>
+                      <div className="flex gap-2">
+                        {languages.map((lang) => (
+                          <Button
+                            key={lang.code}
+                            variant={language === lang.code ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => {
+                              setLanguage(lang.code as "uz" | "ru" | "en")
+                              saveSettings()
+                            }}
+                          >
+                            {lang.flag} {lang.name}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
         </div>
 
         {/* Область чата */}
-        <div className={`flex-1 flex flex-col min-w-0 ${isMobile && showSidebar ? "hidden" : "flex"}`}>
+        <div
+          className={`flex-1 flex flex-col min-w-0 ${isMobile && showSidebar ? "hidden" : "flex"}`}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+        >
           {selectedChat ? (
             <>
               {/* Заголовок чата */}
@@ -1573,8 +1848,11 @@ export default function ActogramChat() {
                 <div className="flex items-center gap-3">
                   {isMobile && (
                     <Button variant="ghost" size="icon" onClick={() => setShowSidebar(true)}>
-                      <ArrowLeft className="h-4 w-4" />
+                      <Menu className="h-4 w-4" />
                     </Button>
+                  )}
+                  {isMobile && showSwipeHint && (
+                    <span className="text-xs text-gray-500 dark:text-gray-400">{t.swipeHint}</span>
                   )}
                   <Avatar className="h-10 w-10">
                     {(() => {
@@ -1587,8 +1865,8 @@ export default function ActogramChat() {
                           })()
                         : selectedChat.avatar
                       
-                      if (avatarSrc) {
-                        return <AvatarImage src={avatarSrc} />
+                      if (isValidAvatarUrl(avatarSrc as string)) {
+                        return <AvatarImage src={avatarSrc as string} />
                       } else {
                         return (
                           <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white">
@@ -1656,12 +1934,6 @@ export default function ActogramChat() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button variant="ghost" size="icon" className={buttonStyle}>
-                    <Phone className="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="icon" className={buttonStyle}>
-                    <Video className="h-4 w-4" />
-                  </Button>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button variant="ghost" size="icon" className={buttonStyle}>
@@ -1697,7 +1969,11 @@ export default function ActogramChat() {
               </div>
 
               {/* Сообщения */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              <div 
+                className="flex-1 overflow-y-auto overflow-x-hidden no-scrollbar p-4 space-y-4"
+                onDragOver={handleDragOver}
+                onDrop={handleDrop}
+              >
                 {messages.length === 0 ? (
                   <div className="flex-1 flex items-center justify-center">
                     <div className="text-center space-y-4">
@@ -1707,6 +1983,9 @@ export default function ActogramChat() {
                       <div>
                         <h3 className="text-lg font-semibold">{t.noMessages}</h3>
                         <p className="text-gray-500">{t.startChat}</p>
+                        <p className="text-sm text-gray-400 mt-2">
+                          💡 Перетащите изображение сюда или нажмите кнопку камеры
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -1715,6 +1994,10 @@ export default function ActogramChat() {
                     <div
                       key={message.id}
                       className={`flex ${message.senderId === currentUser?.id ? "justify-end" : "justify-start"}`}
+                      onTouchStart={e => handleMsgTouchStart(e, message.id)}
+                      onTouchMove={handleMsgTouchMove}
+                      onTouchEnd={() => handleMsgTouchEnd(message)}
+                      style={swipeMsgId === message.id && swipeMsgDeltaX < 0 ? { transform: `translateX(${swipeMsgDeltaX}px)` } : {}}
                     >
                       <div
                         className={`max-w-xs lg:max-w-md px-4 py-2 rounded-2xl shadow-lg transition-all duration-200 hover:shadow-xl group ${
@@ -1730,12 +2013,11 @@ export default function ActogramChat() {
                           </div>
                         )}
 
-                        {/* Для общего чата выводим имя отправителя */}
-                        {selectedChat?.id === "global" && message.senderId !== currentUser?.id && (
-                          <p className="text-xs font-bold mb-1 opacity-90">{message.senderName}:</p>
-                        )}
-                        {selectedChat?.id === "global" && message.senderId === currentUser?.id && (
-                          <p className="text-xs font-bold mb-1 opacity-90 text-right">{message.senderName}:</p>
+                        {/* Для общего чата всегда показываем имя отправителя */}
+                        {selectedChat?.id === "global" && (
+                          <p className={`text-xs font-bold mb-1 opacity-90 ${message.senderId === currentUser?.id ? "text-right" : ""}`}>
+                            {message.senderName}:
+                          </p>
                         )}
 
                         {/* Для остальных чатов, если не вы, показываем имя */}
@@ -1743,7 +2025,27 @@ export default function ActogramChat() {
                           <p className="text-xs font-medium mb-1 opacity-70">{message.senderName}</p>
                         )}
 
-                        <p className="break-words">{message.content}</p>
+                        {/* Превью изображения */}
+                        {message.type === "image" && message.fileUrl && (
+                          <div className="mt-2 mb-2">
+                            <a
+                              href={`https://actogr.onrender.com${message.fileUrl}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 underline break-all"
+                            >
+                              {`https://actogr.onrender.com${message.fileUrl}`}
+                            </a>
+                            {message.fileName && (
+                              <p className="text-xs text-gray-300 mt-1">{message.fileName}</p>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Текст сообщения (если не картинка) */}
+                        {message.type !== "image" && (
+                          <p className="break-words">{message.content}</p>
+                        )}
 
                         <div className="flex items-center justify-between mt-2">
                           <div className="flex items-center gap-1">
@@ -1784,6 +2086,18 @@ export default function ActogramChat() {
                                   <Copy className="h-4 w-4 mr-2" />
                                   {t.copy}
                                 </DropdownMenuItem>
+                                {message.senderId === currentUser?.id && (
+                                  <>
+                                    <DropdownMenuItem onClick={() => setEditingMessage(message)}>
+                                      <Edit className="h-4 w-4 mr-2" />
+                                      {t.edit}
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => handleDeleteMessage(message.id)} className="text-red-600">
+                                      <Trash2 className="h-4 w-4 mr-2" />
+                                      Удалить
+                                    </DropdownMenuItem>
+                                  </>
+                                )}
                                 <DropdownMenuSeparator />
                                 <div className="flex gap-1 p-2">
                                   {reactionEmojis.slice(0, 5).map((emoji) => (
@@ -1851,16 +2165,24 @@ export default function ActogramChat() {
 
               {/* Поле ввода */}
               <div className={`p-4 ${cardStyle} border-t`}>
-                <div className="flex items-center gap-2">
-                  <input type="file" ref={fileInputRef} className="hidden" accept="*/*" />
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => fileInputRef.current?.click()}
-                    className={buttonStyle}
-                  >
-                    <Paperclip className="h-4 w-4" />
-                  </Button>
+                                  <div className="flex items-center gap-2">
+                    <input type="file" ref={fileInputRef} className="hidden" accept="*/*" />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => fileInputRef.current?.click()}
+                      className={buttonStyle}
+                    >
+                      <Paperclip className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleImageUpload}
+                      className={buttonStyle}
+                    >
+                      <Camera className="h-4 w-4" />
+                    </Button>
                   <div className="flex-1 relative">
                     <Input
                       ref={messageInputRef}
@@ -1884,11 +2206,6 @@ export default function ActogramChat() {
                       className={`${inputStyle} pr-20`}
                       disabled={!isConnected || (selectedChat?.id === "global" && (globalChatCooldown > 0 || pendingGlobalMessage))}
                     />
-                    <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-1">
-                      <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                        <Smile className="h-4 w-4" />
-                      </Button>
-                    </div>
                   </div>
                   <Button
                     onClick={sendMessage}
@@ -1926,12 +2243,6 @@ export default function ActogramChat() {
           ) : (
             <div className="flex-1 flex items-center justify-center">
               <div className="text-center space-y-6">
-                {isMobile && (
-                  <Button onClick={() => setShowSidebar(true)} className={`mb-4 ${buttonStyle}`}>
-                    <Menu className="h-4 w-4 mr-2" />
-                    Чаты
-                  </Button>
-                )}
                 <div className="w-32 h-32 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center mx-auto shadow-2xl">
                   <MessageCircle className="h-16 w-16 text-white" />
                 </div>
@@ -1956,6 +2267,18 @@ export default function ActogramChat() {
             </div>
           )}
         </div>
+        {/* Краевой язычок для открытия боковой панели на мобильных */}
+        {isMobile && !showSidebar && (
+          <button
+            onClick={() => setShowSidebar(true)}
+            aria-label={t.swipeHint}
+            className="fixed left-0 top-1/2 -translate-y-1/2 z-40 w-4 h-24 bg-blue-500/40 hover:bg-blue-500/60 rounded-r-full flex items-center justify-center"
+          >
+            <span className="-rotate-90 text-[10px] text-white select-none">{t.appName}</span>
+          </button>
+        )}
+
+        {/* Плавающая кнопка убрана по запросу пользователя */}
       </div>
       
       {/* Диалог информации о чате */}
@@ -1971,8 +2294,8 @@ export default function ActogramChat() {
             <div className="space-y-4">
               <div className="flex items-center gap-3">
                 <Avatar className="h-16 w-16">
-                  {selectedChatForInfo.avatar ? (
-                    <AvatarImage src={selectedChatForInfo.avatar} />
+                  {isValidAvatarUrl(selectedChatForInfo.avatar) ? (
+                    <AvatarImage src={selectedChatForInfo.avatar as string} />
                   ) : (
                     <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white">
                       {selectedChatForInfo.isGroup ? (
@@ -2025,11 +2348,11 @@ export default function ActogramChat() {
                     {selectedChatForInfo.participants.map((participant) => (
                       <div key={participant.id} className="flex items-center gap-2">
                         <Avatar className="h-6 w-6">
-                          {participant.avatar ? (
-                            <AvatarImage src={participant.avatar} />
+                          {isValidAvatarUrl(participant.avatar) ? (
+                            <AvatarImage src={participant.avatar as string} />
                           ) : (
                             <AvatarFallback className="text-xs">
-                              {participant.username?.charAt(1) || participant.fullName?.charAt(0)}
+                              {getUserInitial(participant)}
                             </AvatarFallback>
                           )}
                         </Avatar>
@@ -2046,6 +2369,26 @@ export default function ActogramChat() {
           )}
         </DialogContent>
       </Dialog>
+      {/* Модальное окно для увеличенного изображения */}
+      {modalImage && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50"
+          onClick={() => setModalImage(null)}
+        >
+          <img
+            src={modalImage}
+            alt="Увеличенное изображение"
+            className="max-w-full max-h-full rounded-lg shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          />
+        </div>
+      )}
+      {/* Глобальные стили для скрытия полос прокрутки */}
+      <style jsx global>{`
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      `}</style>
     </div>
   )
 }
+ 
