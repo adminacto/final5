@@ -1,33 +1,33 @@
-const express = require("express");
-const http = require("http");
-const socketIo = require("socket.io");
-const cors = require("cors");
-const bcrypt = require("bcrypt");
-const jwt = require("jsonwebtoken");
-const rateLimit = require("express-rate-limit");
-const helmet = require("helmet");
-const { v4: uuidv4 } = require("uuid");
-const path = require("path");
-const mongoose = require("mongoose");
-const { Schema, model } = require("mongoose");
-const fs = require("fs");
-const multer = require("multer");
-const cookieParser = require("cookie-parser");
+const express = require("express")
+const http = require("http")
+const socketIo = require("socket.io")
+const cors = require("cors")
+const bcrypt = require("bcrypt")
+const jwt = require("jsonwebtoken")
+const rateLimit = require("express-rate-limit")
+const helmet = require("helmet")
+const { v4: uuidv4 } = require("uuid")
+const path = require("path")
+const mongoose = require("mongoose")
+const { Schema, model } = require("mongoose")
+const fs = require("fs")
+const multer = require("multer")
+const cookieParser = require("cookie-parser")
 
 // Инициализация приложенияa
-const app = express();
-const server = http.createServer(app);
+const app = express()
+const server = http.createServer(app)
 
 // Настройка trust proxy для работы за прокси (Render.com)
-app.set("trust proxy", 1);
+app.set("trust proxy", 1)
 
 // Безопасность
 app.use(
   helmet({
     contentSecurityPolicy: false,
     crossOriginEmbedderPolicy: false,
-  })
-);
+  }),
+)
 
 // Rate limiting с правильной настройкой для прокси
 const limiter = rateLimit({
@@ -38,7 +38,7 @@ const limiter = rateLimit({
   legacyHeaders: false,
   // Настройка для работы за прокси
   skip: (req) => req.ip === "127.0.0.1" || req.ip === "::1",
-});
+})
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -48,24 +48,24 @@ const authLimiter = rateLimit({
   legacyHeaders: false,
   // Настройка для работы за прокси
   skip: (req) => req.ip === "127.0.0.1" || req.ip === "::1",
-});
+})
 
 // Создать папку avatars, если не существует
-const avatarsDir = path.join(__dirname, "public", "avatars");
+const avatarsDir = path.join(__dirname, "public", "avatars")
 if (!fs.existsSync(avatarsDir)) {
-  fs.mkdirSync(avatarsDir, { recursive: true });
+  fs.mkdirSync(avatarsDir, { recursive: true })
 }
 
 const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, avatarsDir);
+  destination: (req, file, cb) => {
+    cb(null, avatarsDir)
   },
-  filename: function (req, file, cb) {
-    const ext = path.extname(file.originalname);
-    const uniqueName = `${Date.now()}_${Math.round(Math.random() * 1e9)}${ext}`;
-    cb(null, uniqueName);
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname)
+    const uniqueName = `${Date.now()}_${Math.round(Math.random() * 1e9)}${ext}`
+    cb(null, uniqueName)
   },
-});
+})
 const upload = multer({
   storage,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
@@ -73,17 +73,16 @@ const upload = multer({
     // Разрешаем любые файлы (можно добавить фильтр по типу, если нужно)
     cb(null, true)
   },
-});
+})
 
 // Конфигурация
-const JWT_SECRET =
-  process.env.JWT_SECRET || "actogram_ultra_secure_key_2024_v3";
-const PORT = process.env.PORT || 3001;
+const JWT_SECRET = process.env.JWT_SECRET || "actogram_ultra_secure_key_2024_v3"
+const PORT = process.env.PORT || 3001
 
 // Админ доступ (минимальный, можно вынести в env)
-const ADMIN_USERNAME = "Mumtozbekk";
+const ADMIN_USERNAME = "Mumtozbekk"
 // Сложный пароль: 24+ символов, смешанный набор
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "pA7$Zk!2gHq9#LmXv4@rT1wQ";
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "pA7$Zk!2gHq9#LmXv4@rT1wQ"
 
 // � азрешенные домены
 const allowedOrigins = [
@@ -93,45 +92,42 @@ const allowedOrigins = [
   "http://127.0.0.1:3000",
   /\.vercel\.app$/,
   /\.render\.com$/,
-];
+]
 
 // CORS настройки
 const corsOptions = {
   origin: (origin, callback) => {
-    if (!origin) return callback(null, true);
+    if (!origin) return callback(null, true)
 
     const isAllowed = allowedOrigins.some((allowed) => {
       if (typeof allowed === "string") {
-        return (
-          origin === allowed ||
-          origin.includes(allowed.replace(/https?:\/\//, ""))
-        );
+        return origin === allowed || origin.includes(allowed.replace(/https?:\/\//, ""))
       }
-      return allowed.test(origin);
-    });
+      return allowed.test(origin)
+    })
 
     if (isAllowed) {
-      callback(null, true);
+      callback(null, true)
     } else {
-      callback(new Error("CORS: Домен не разрешен"));
+      callback(new Error("CORS: Домен не разрешен"))
     }
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE"],
   allowedHeaders: ["Content-Type", "Authorization", "Cookie"],
   exposedHeaders: ["Set-Cookie"],
-};
+}
 
-app.use(cors(corsOptions));
-app.use(express.json({ limit: "10mb" }));
-app.use(express.static(path.join(__dirname, "public")));
-app.use(cookieParser());
+app.use(cors(corsOptions))
+app.use(express.json({ limit: "10mb" }))
+app.use(express.static(path.join(__dirname, "public")))
+app.use(cookieParser())
 
 //                                        HTML-
 app.use((req, res, next) => {
-  res.setHeader("Content-Type", "text/html; charset=utf-8");
-  next();
-});
+  res.setHeader("Content-Type", "text/html; charset=utf-8")
+  next()
+})
 
 // Socket.IO настройки
 const io = socketIo(server, {
@@ -139,91 +135,74 @@ const io = socketIo(server, {
   transports: ["websocket", "polling"],
   pingTimeout: 60000,
   pingInterval: 25000,
-});
+})
 
 // Хранилище данных (в продакшене использовать базу данных)
-const activeConnections = new Map(); // socketId -> userId
-const typingUsers = new Map(); // chatId -> Set of userIds
-const blockedUsers = new Map(); // userId -> Set of blocked userIds
-const userHeartbeats = new Map(); // userId -> lastHeartbeat timestamp
+const activeConnections = new Map() // socketId -> userId
+const typingUsers = new Map() // chatId -> Set of userIds
+const blockedUsers = new Map() // userId -> Set of blocked userIds
+const userHeartbeats = new Map() // userId -> lastHeartbeat timestamp
 // Rate limiting для общего чата
-const globalChatRateLimit = new Map(); // userId -> lastTimestamp
-const globalChatOnline = new Set(); // socket.id
+const globalChatRateLimit = new Map() // userId -> lastTimestamp
+const globalChatOnline = new Set() // socket.id
 
 // Middleware для проверки JWT
 const authenticateToken = (req, res, next) => {
-  let token = null;
-  const authHeader = req.headers["authorization"];
-  console.log("🔍 Проверяем аутентификацию для запроса:", req.path);
-  console.log("🔍 Заголовки:", Object.keys(req.headers));
-  console.log("🔍 Cookie:", req.cookies);
-  console.log("🔍 Origin:", req.headers.origin);
-  console.log("🔍 Host:", req.headers.host);
+  let token = null
+  const authHeader = req.headers["authorization"]
+  console.log("🔍 Проверяем аутентификацию для запроса:", req.path)
+  console.log("🔍 Заголовки:", Object.keys(req.headers))
+  console.log("🔍 Cookie:", req.cookies)
+  console.log("🔍 Origin:", req.headers.origin)
+  console.log("🔍 Host:", req.headers.host)
 
   if (authHeader && authHeader.startsWith("Bearer ")) {
-    token = authHeader.split(" ")[1];
-    console.log("🔑 Токен получен из заголовка Authorization");
+    token = authHeader.split(" ")[1]
+    console.log("🔑 Токен получен из заголовка Authorization")
   } else if (req.cookies && req.cookies.token) {
-    token = req.cookies.token;
-    console.log("🍪 Токен получен из cookie");
+    token = req.cookies.token
+    console.log("🍪 Токен получен из cookie")
   } else {
-    console.log("❌ Токен не найден ни в заголовке, ни в cookie");
-    console.log("🔍 Все cookie:", JSON.stringify(req.cookies, null, 2));
+    console.log("❌ Токен не найден ни в заголовке, ни в cookie")
+    console.log("🔍 Все cookie:", JSON.stringify(req.cookies, null, 2))
   }
 
   if (!token) {
-    console.log("❌ Токен отсутствует, возвращаем 401");
-    return res.status(401).json({ error: "Токен доступа обязателен" });
+    console.log("❌ Токен отсутствует, возвращаем 401")
+    return res.status(401).json({ error: "Токен доступа обязателен" })
   }
 
   jwt.verify(token, JWT_SECRET, (err, user) => {
     if (err) {
-      console.log("❌ Ошибка верификации токена:", err.message);
-      return res
-        .status(403)
-        .json({ error: "Недействительный или истекший токен" });
+      console.log("❌ Ошибка верификации токена:", err.message)
+      return res.status(403).json({ error: "Недействительный или истекший токен" })
     }
-    console.log(
-      "✅ Пользователь аутентифицирован:",
-      user.userId,
-      user.username
-    );
-    req.user = user;
-    next();
-  });
-};
+    console.log("✅ Пользователь аутентифицирован:", user.userId, user.username)
+    req.user = user
+    next()
+  })
+}
 
 // Валидация
-const validateEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-const validatePassword = (password) => password && password.length >= 8;
-const validateUsername = (username) => /^@[a-zA-Z0-9_]{3,20}$/.test(username);
+const validateEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+const validatePassword = (password) => password && password.length >= 8
+const validateUsername = (username) => /^@[a-zA-Z0-9_]{3,20}$/.test(username)
 
 // Утилиты
 const encryptMessage = (message) => {
-  return btoa(unescape(encodeURIComponent(message)));
-};
+  return btoa(unescape(encodeURIComponent(message)))
+}
 
 const decryptMessage = (encrypted) => {
   try {
-    return decodeURIComponent(escape(atob(encrypted)));
+    return decodeURIComponent(escape(atob(encrypted)))
   } catch {
-    return encrypted;
+    return encrypted
   }
-};
+}
 
 // �модзи для реакций
-const reactionEmojis = [
-  "❤️",
-  "👍",
-  "👎",
-  "😂",
-  "😮",
-  "😢",
-  "😡",
-  "🔥",
-  "👏",
-  "🎉",
-];
+const reactionEmojis = ["❤️", "👍", "👎", "😂", "😮", "😢", "😡", "🔥", "👏", "🎉"]
 
 // -------- Модель забаненных IP --------
 const BannedIPSchema = new Schema({
@@ -231,26 +210,26 @@ const BannedIPSchema = new Schema({
   reason: { type: String },
   bannedAt: { type: Date, default: Date.now },
   bannedBy: { type: String, default: ADMIN_USERNAME },
-});
-const BannedIP = model("BannedIP", BannedIPSchema);
+})
+const BannedIP = model("BannedIP", BannedIPSchema)
 
 // Получение реального IP c учетом proxy
 function getClientIp(req) {
-  const xff = req.headers["x-forwarded-for"]; // может быть списком
+  const xff = req.headers["x-forwarded-for"] // может быть списком
   if (xff) {
-    const ips = Array.isArray(xff) ? xff : String(xff).split(",");
-    if (ips.length > 0) return ips[0].trim();
+    const ips = Array.isArray(xff) ? xff : String(xff).split(",")
+    if (ips.length > 0) return ips[0].trim()
   }
-  return req.ip || req.connection?.remoteAddress || req.socket?.remoteAddress || "";
+  return req.ip || req.connection?.remoteAddress || req.socket?.remoteAddress || ""
 }
 
 // Создание пользователя-бота при запуске
-const BOT_USERNAME = "@actogram_bot";
-const BOT_ID_KEY = "actogram_bot_id";
-let botUserId = null;
+const BOT_USERNAME = "@actogram_bot"
+const BOT_ID_KEY = "actogram_bot_id"
+let botUserId = null
 
 async function ensureBotUser() {
-  let bot = await User.findOne({ username: BOT_USERNAME });
+  let bot = await User.findOne({ username: BOT_USERNAME })
   if (!bot) {
     bot = await User.create({
       email: "bot@actogram.app",
@@ -264,17 +243,17 @@ async function ensureBotUser() {
       lastSeen: new Date(),
       avatar: null,
       status: "online",
-    });
-    console.log("🤖 Actogram Bot создан!");
+    })
+    console.log("🤖 Actogram Bot создан!")
   }
-  botUserId = bot._id.toString();
-  return botUserId;
+  botUserId = bot._id.toString()
+  return botUserId
 }
 
 // Создание глобального чата (если его нет)
 async function ensureGlobalChat() {
-  const globalChatId = "global";
-  let chat = await Chat.findById(globalChatId);
+  const globalChatId = "global"
+  let chat = await Chat.findById(globalChatId)
   if (!chat) {
     chat = await Chat.create({
       _id: globalChatId,
@@ -290,8 +269,8 @@ async function ensureGlobalChat() {
       theme: "default",
       isPinned: true,
       isMuted: false,
-    });
-    console.log("🌍 Глобальный чат создан!");
+    })
+    console.log("🌍 Глобальный чат создан!")
   }
 }
 
@@ -527,8 +506,8 @@ app.get("/", (req, res) => {
         </script>
     </body>
     </html>
-  `);
-});
+  `)
+})
 
 // Простейшая веб-админка: логин и управление баном IP
 app.get("/admin", (req, res) => {
@@ -812,54 +791,52 @@ app.get("/admin", (req, res) => {
       </script>
     </body>
     </html>
-  `);
-});
+  `)
+})
 
 // -------- Admin: JWT login --------
 app.post("/admin/login", authLimiter, async (req, res) => {
   try {
-    const { username, password } = req.body || {};
+    const { username, password } = req.body || {}
     if (username !== ADMIN_USERNAME || password !== ADMIN_PASSWORD) {
-      return res.status(401).json({ error: "Неверные данные" });
+      return res.status(401).json({ error: "Неверные данные" })
     }
-    const token = jwt.sign(
-      { admin: true, username: ADMIN_USERNAME },
-      JWT_SECRET,
-      { expiresIn: "12h" }
-    );
-    res.json({ token });
+    const token = jwt.sign({ admin: true, username: ADMIN_USERNAME }, JWT_SECRET, { expiresIn: "12h" })
+    res.json({ token })
   } catch (err) {
-    res.status(500).json({ error: "Ошибка входа" });
+    res.status(500).json({ error: "Ошибка входа" })
   }
-});
+})
 
 // -------- Admin: middleware --------
 function requireAdmin(req, res, next) {
-  const authHeader = req.headers["authorization"] || "";
-  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
-  if (!token) return res.status(401).json({ error: "Токен обязателен" });
+  const authHeader = req.headers["authorization"] || ""
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null
+  if (!token) return res.status(401).json({ error: "Токен обязателен" })
   try {
-    const payload = jwt.verify(token, JWT_SECRET);
+    const payload = jwt.verify(token, JWT_SECRET)
     if (!payload?.admin || payload?.username !== ADMIN_USERNAME) {
-      return res.status(403).json({ error: "Нет доступа" });
+      return res.status(403).json({ error: "Нет доступа" })
     }
-    next();
+    next()
   } catch (e) {
-    return res.status(403).json({ error: "Недействительный токен" });
+    return res.status(403).json({ error: "Недействительный токен" })
   }
 }
 
 // -------- Admin: IP ban management --------
 app.get("/admin/bans", requireAdmin, async (req, res) => {
-  const list = await BannedIP.find().sort({ bannedAt: -1 }).lean();
-  res.json({ items: list });
-});
+  const list = await BannedIP.find().sort({ bannedAt: -1 }).lean()
+  res.json({ items: list })
+})
 
 // Список пользователей с последним IP
 app.get("/admin/users", requireAdmin, async (req, res) => {
   try {
-    const users = await User.find({}, "_id username fullName email lastSeen isOnline lastIp status isVerified").sort({ lastSeen: -1 }).lean();
-    const items = users.map(u => ({
+    const users = await User.find({}, "_id username fullName email lastSeen isOnline lastIp status isVerified")
+      .sort({ lastSeen: -1 })
+      .lean()
+    const items = users.map((u) => ({
       id: u._id.toString(),
       username: u.username,
       fullName: u.fullName,
@@ -869,63 +846,63 @@ app.get("/admin/users", requireAdmin, async (req, res) => {
       lastIp: u.lastIp || "",
       status: u.status || "",
       isVerified: !!u.isVerified,
-    }));
-    res.json({ items });
+    }))
+    res.json({ items })
   } catch (e) {
-    res.status(500).json({ error: "Ошибка получения пользователей" });
+    res.status(500).json({ error: "Ошибка получения пользователей" })
   }
-});
+})
 
 app.post("/admin/ban-ip", requireAdmin, async (req, res) => {
-  const { ip, reason } = req.body || {};
+  const { ip, reason } = req.body || {}
   if (!ip || typeof ip !== "string") {
-    return res.status(400).json({ error: "ip обязателен" });
+    return res.status(400).json({ error: "ip обязателен" })
   }
   try {
     await BannedIP.updateOne(
       { ip },
       { $set: { ip, reason: reason || "", bannedAt: new Date(), bannedBy: ADMIN_USERNAME } },
-      { upsert: true }
-    );
-    res.json({ success: true });
+      { upsert: true },
+    )
+    res.json({ success: true })
   } catch (e) {
-    res.status(500).json({ error: "Ошибка бана" });
+    res.status(500).json({ error: "Ошибка бана" })
   }
-});
+})
 
 app.post("/admin/unban-ip", requireAdmin, async (req, res) => {
-  const { ip } = req.body || {};
+  const { ip } = req.body || {}
   if (!ip || typeof ip !== "string") {
-    return res.status(400).json({ error: "ip обязателен" });
+    return res.status(400).json({ error: "ip обязателен" })
   }
   try {
-    await BannedIP.deleteOne({ ip });
-    res.json({ success: true });
+    await BannedIP.deleteOne({ ip })
+    res.json({ success: true })
   } catch (e) {
-    res.status(500).json({ error: "Ошибка разбана" });
+    res.status(500).json({ error: "Ошибка разбана" })
   }
-});
+})
 
 // -------- Enforce IP bans on HTTP --------
 app.use(async (req, res, next) => {
   try {
-    const clientIp = getClientIp(req);
-    const banned = await BannedIP.findOne({ ip: clientIp }).lean();
+    const clientIp = getClientIp(req)
+    const banned = await BannedIP.findOne({ ip: clientIp }).lean()
     if (banned) {
-      return res.status(403).json({ error: "Ваш IP забанен" });
+      return res.status(403).json({ error: "Ваш IP забанен" })
     }
   } catch (e) {
     // молча пропускаем в случае ошибки, чтобы не ломать сервис
   }
-  next();
-});
+  next()
+})
 
 // API Routes
 app.get("/api/health", async (req, res) => {
   try {
-    const userCount = await User.countDocuments();
-    const chatCount = await Chat.countDocuments();
-    const messageCount = await Message.countDocuments();
+    const userCount = await User.countDocuments()
+    const chatCount = await Chat.countDocuments()
+    const messageCount = await Message.countDocuments()
 
     res.json({
       status: "ACTOGRAM Server v3.0 работает отлично",
@@ -946,145 +923,124 @@ app.get("/api/health", async (req, res) => {
         secureAuth: true,
         rateLimiting: true,
       },
-    });
+    })
   } catch (error) {
-    console.error("Health check error:", error);
-    res.status(500).json({ error: "Ошибка сервера" });
+    console.error("Health check error:", error)
+    res.status(500).json({ error: "Ошибка сервера" })
   }
-});
+})
 
 // Endpoint для загрузки аватара
-app.post(
-  "/api/upload-avatar",
-  authenticateToken,
-  upload.single("avatar"),
-  async (req, res) => {
-    try {
-      if (!req.file) {
-        return res.status(400).json({ error: "Файл не загружен" });
-      }
-      const userId = req.user.userId;
-      const avatarUrl = `/avatars/${req.file.filename}`;
-      await User.findByIdAndUpdate(userId, { avatar: avatarUrl });
-      res.json({ success: true, avatar: avatarUrl });
-    } catch (error) {
-      console.error("upload-avatar error:", error);
-      res.status(500).json({ error: "Ошибка загрузки аватара" });
+app.post("/api/upload-avatar", authenticateToken, upload.single("avatar"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "Файл не загружен" })
     }
+    const userId = req.user.userId
+    const avatarUrl = `/avatars/${req.file.filename}`
+    await User.findByIdAndUpdate(userId, { avatar: avatarUrl })
+    res.json({ success: true, avatar: avatarUrl })
+  } catch (error) {
+    console.error("upload-avatar error:", error)
+    res.status(500).json({ error: "Ошибка загрузки аватара" })
   }
-);
+})
 
 // Endpoint для создания группы/канала с аватаром
-app.post(
-  "/api/create-group",
-  authenticateToken,
-  upload.single("avatar"),
-  async (req, res) => {
-    try {
-      const userId = req.user.userId;
-      const { name, description, type, participants } = req.body;
-      if (!name || !type || !["group", "channel"].includes(type)) {
-        return res.status(400).json({ error: "Некорректные данные" });
-      }
-      let avatarUrl = null;
-      if (req.file) {
-        avatarUrl = `/avatars/${req.file.filename}`;
-      }
-      // Участники: всегда добавлять создателя
-      let members = [userId];
-      if (participants) {
-        try {
-          const parsed = JSON.parse(participants);
-          if (Array.isArray(parsed)) {
-            members = Array.from(new Set([...members, ...parsed]));
-          }
-        } catch {}
-      }
-      // Генерируем уникальный id для группы/канала
-      const chatId = `${type}_${Date.now()}_${Math.round(Math.random() * 1e9)}`;
-      const chat = await Chat.create({
-        _id: chatId,
-        name,
-        avatar: avatarUrl,
-        description: description || "",
-        isGroup: true,
-        participants: members,
-        createdAt: new Date(),
-        type,
-        isEncrypted: true,
-        createdBy: userId,
-        theme: "default",
-        isPinned: false,
-        isMuted: false,
-      });
-      // Получить участников для ответа
-      const populatedChat = await Chat.findById(chat._id)
-        .populate(
-          "participants",
-          "_id username fullName avatar isOnline isVerified status"
-        )
-        .lean();
-      res.json({
-        success: true,
-        chat: {
-          ...populatedChat,
-          id: populatedChat._id?.toString() || populatedChat._id,
-          participants: populatedChat.participants.filter((p) => p !== null),
-        },
-      });
-    } catch (error) {
-      console.error("create-group error:", error);
-      res.status(500).json({ error: "Ошибка создания группы/канала" });
+app.post("/api/create-group", authenticateToken, upload.single("avatar"), async (req, res) => {
+  try {
+    const userId = req.user.userId
+    const { name, description, type, participants } = req.body
+    if (!name || !type || !["group", "channel"].includes(type)) {
+      return res.status(400).json({ error: "Некорректные данные" })
     }
+    let avatarUrl = null
+    if (req.file) {
+      avatarUrl = `/avatars/${req.file.filename}`
+    }
+    // Участники: всегда добавлять создателя
+    let members = [userId]
+    if (participants) {
+      try {
+        const parsed = JSON.parse(participants)
+        if (Array.isArray(parsed)) {
+          members = Array.from(new Set([...members, ...parsed]))
+        }
+      } catch {}
+    }
+    // Генерируем уникальный id для группы/канала
+    const chatId = `${type}_${Date.now()}_${Math.round(Math.random() * 1e9)}`
+    const chat = await Chat.create({
+      _id: chatId,
+      name,
+      avatar: avatarUrl,
+      description: description || "",
+      isGroup: true,
+      participants: members,
+      createdAt: new Date(),
+      type,
+      isEncrypted: true,
+      createdBy: userId,
+      theme: "default",
+      isPinned: false,
+      isMuted: false,
+    })
+    // Получить участников для ответа
+    const populatedChat = await Chat.findById(chat._id)
+      .populate("participants", "_id username fullName avatar isOnline isVerified status")
+      .lean()
+    res.json({
+      success: true,
+      chat: {
+        ...populatedChat,
+        id: populatedChat._id?.toString() || populatedChat._id,
+        participants: populatedChat.participants.filter((p) => p !== null),
+      },
+    })
+  } catch (error) {
+    console.error("create-group error:", error)
+    res.status(500).json({ error: "Ошибка создания группы/канала" })
   }
-);
+})
 
 // Аутентификация
 app.post("/api/auth", authLimiter, async (req, res) => {
   try {
-    const { action, email, password, username, fullName, bio } = req.body;
+    const { action, email, password, username, fullName, bio } = req.body
 
     if (!email || !password) {
-      return res.status(400).json({ error: "Email и пароль обязательны" });
+      return res.status(400).json({ error: "Email и пароль обязательны" })
     }
 
     if (!validateEmail(email)) {
-      return res.status(400).json({ error: "Неверный формат email" });
+      return res.status(400).json({ error: "Неверный формат email" })
     }
 
     if (!validatePassword(password)) {
-      return res
-        .status(400)
-        .json({ error: "Пароль должен содержать минимум 8 символов" });
+      return res.status(400).json({ error: "Пароль должен содержать минимум 8 символов" })
     }
 
     if (action === "register") {
       if (!username || !fullName) {
-        return res
-          .status(400)
-          .json({ error: "Username и полное имя обязательны" });
+        return res.status(400).json({ error: "Username и полное имя обязательны" })
       }
 
       if (!validateUsername(username)) {
-        return res
-          .status(400)
-          .json({
-            error: "Username должен начинаться с @ и содержать 3-20 символов",
-          });
+        return res.status(400).json({
+          error: "Username должен начинаться с @ и содержать 3-20 символов",
+        })
       }
 
       const existingUser = await User.findOne({
         $or: [{ email }, { username }],
-      });
+      })
       if (existingUser) {
-        return res
-          .status(400)
-          .json({
-            error: "Пользователь с таким email или username уже существует",
-          });
+        return res.status(400).json({
+          error: "Пользователь с таким email или username уже существует",
+        })
       }
 
-      const hashedPassword = await bcrypt.hash(password, 12);
+      const hashedPassword = await bcrypt.hash(password, 12)
       const user = await User.create({
         email,
         username,
@@ -1097,16 +1053,14 @@ app.post("/api/auth", authLimiter, async (req, res) => {
         lastSeen: new Date(),
         avatar: null,
         status: "offline",
-      });
+      })
 
-      const token = jwt.sign(
-        { userId: user._id, email: user.email, username: user.username },
-        JWT_SECRET,
-        { expiresIn: "30d" }
-      );
-      const userResponse = user.toObject();
-      delete userResponse.password;
-      userResponse.id = user._id.toString();
+      const token = jwt.sign({ userId: user._id, email: user.email, username: user.username }, JWT_SECRET, {
+        expiresIn: "30d",
+      })
+      const userResponse = user.toObject()
+      delete userResponse.password
+      userResponse.id = user._id.toString()
       // --- Устанавливаем cookie с токеном ---
       res.cookie("token", token, {
         httpOnly: false, // Изменено на false для отладки
@@ -1114,37 +1068,35 @@ app.post("/api/auth", authLimiter, async (req, res) => {
         sameSite: "Lax", // Вернули обратно
         maxAge: 30 * 24 * 60 * 60 * 1000,
         path: "/",
-      });
-      console.log("🍪 Cookie установлен для пользователя:", user.username);
+      })
+      console.log("🍪 Cookie установлен для пользователя:", user.username)
       // ---
       res.json({
         success: true,
         message: "� егистрация успешна",
         user: userResponse,
         token,
-      });
-      console.log(`✅ Новый пользователь: ${username} (${email})`);
+      })
+      console.log(`✅ Новый пользователь: ${username} (${email})`)
     } else if (action === "login") {
-      const user = await User.findOne({ email });
+      const user = await User.findOne({ email })
       if (!user) {
-        return res.status(401).json({ error: "Неверный email или пароль" });
+        return res.status(401).json({ error: "Неверный email или пароль" })
       }
-      const isValidPassword = await bcrypt.compare(password, user.password);
+      const isValidPassword = await bcrypt.compare(password, user.password)
       if (!isValidPassword) {
-        return res.status(401).json({ error: "Неверный email или пароль" });
+        return res.status(401).json({ error: "Неверный email или пароль" })
       }
-      user.isOnline = true;
-      user.lastSeen = new Date();
-      user.status = "online";
-      await user.save();
-      const token = jwt.sign(
-        { userId: user._id, email: user.email, username: user.username },
-        JWT_SECRET,
-        { expiresIn: "30d" }
-      );
-      const userResponse = user.toObject();
-      delete userResponse.password;
-      userResponse.id = user._id.toString();
+      user.isOnline = true
+      user.lastSeen = new Date()
+      user.status = "online"
+      await user.save()
+      const token = jwt.sign({ userId: user._id, email: user.email, username: user.username }, JWT_SECRET, {
+        expiresIn: "30d",
+      })
+      const userResponse = user.toObject()
+      delete userResponse.password
+      userResponse.id = user._id.toString()
       // --- Устанавливаем cookie с токеном ---
       res.cookie("token", token, {
         httpOnly: false, // Изменено на false для отладки
@@ -1152,49 +1104,47 @@ app.post("/api/auth", authLimiter, async (req, res) => {
         sameSite: "Lax", // Вернули обратно
         maxAge: 30 * 24 * 60 * 60 * 1000,
         path: "/",
-      });
-      console.log("🍪 Cookie установлен для пользователя:", user.username);
+      })
+      console.log("🍪 Cookie установлен для пользователя:", user.username)
       // ---
       res.json({
         success: true,
         message: "Вход выполнен успешно",
         user: userResponse,
         token,
-      });
-      console.log(`✅ Пользователь вошел: ${user.username}`);
+      })
+      console.log(`✅ Пользователь вошел: ${user.username}`)
     } else {
-      res.status(400).json({ error: "Неверное действие" });
+      res.status(400).json({ error: "Неверное действие" })
     }
   } catch (error) {
-    console.error("Auth error:", error);
-    res.status(500).json({ error: "Ошибка сервера" });
+    console.error("Auth error:", error)
+    res.status(500).json({ error: "Ошибка сервера" })
   }
-});
+})
 
 // Получе�ие чатов пользователя (MongoDB)
 app.get("/api/chats", authenticateToken, async (req, res) => {
   try {
-    const userId = req.user.userId;
-    console.log("📋 Запрос чатов для пользователя:", userId, req.user.username);
+    const userId = req.user.userId
+    console.log("📋 Запрос чатов для пользователя:", userId, req.user.username)
 
     // Найти все чаты, где пользователь — участник
     const chats = await Chat.find({ participants: userId })
-      .populate(
-        "participants",
-        "_id username fullName avatar isOnline isVerified status"
-      )
+      .populate("participants", "_id username fullName avatar isOnline isVerified status")
       .sort({ updatedAt: -1 }) // Сортируем по времени обновления
-      .lean();
+      .lean()
 
-    console.log("📋 Найдено чатов:", chats.length);
+    console.log("📋 Найдено чатов:", chats.length)
 
     // Для каждого чата получить последнее сообщение и количество сообщений
     const chatList = await Promise.all(
       chats.map(async (chat) => {
         const lastMessage = await Message.findOne({ chat: chat._id })
           .sort({ timestamp: -1 })
-          .lean();
-        const messageCount = await Message.countDocuments({ chat: chat._id });
+          .populate("sender", "username fullName avatar")
+          .lean()
+        const messageCount = await Message.countDocuments({ chat: chat._id })
         return {
           ...chat,
           id: chat._id?.toString() || chat._id,
@@ -1203,29 +1153,28 @@ app.get("/api/chats", authenticateToken, async (req, res) => {
             ? {
                 ...lastMessage,
                 id: lastMessage._id?.toString() || lastMessage._id,
-                senderId: lastMessage.sender?.toString() || lastMessage.sender,
+                senderId: lastMessage.sender?._id?.toString() || lastMessage.sender,
+                senderName: lastMessage.sender?.username || "Пользователь", // Добавлено senderName
                 chatId: lastMessage.chat?.toString() || lastMessage.chat,
               }
             : null,
           messageCount,
           unreadCount: 0, // TODO: реализовать
-        };
-      })
-    );
+        }
+      }),
+    )
 
     // Всегда добавляем глобальный чат в начало списка
-    const globalChat = await Chat.findById("global").lean();
-    if (
-      globalChat &&
-      !chatList.some((chat) => (chat.id || chat._id) === "global")
-    ) {
+    const globalChat = await Chat.findById("global").lean()
+    if (globalChat && !chatList.some((chat) => (chat.id || chat._id) === "global")) {
       //
       const globalLastMessage = await Message.findOne({ chat: "global" })
         .sort({ timestamp: -1 })
-        .lean();
+        .populate("sender", "username fullName avatar")
+        .lean()
       const globalMessageCount = await Message.countDocuments({
         chat: "global",
-      });
+      })
       chatList.unshift({
         ...globalChat,
         id: globalChat._id?.toString() || globalChat._id,
@@ -1234,48 +1183,46 @@ app.get("/api/chats", authenticateToken, async (req, res) => {
           ? {
               ...globalLastMessage,
               id: globalLastMessage._id?.toString() || globalLastMessage._id,
-              senderId:
-                globalLastMessage.sender?.toString() ||
-                globalLastMessage.sender,
-              chatId:
-                globalLastMessage.chat?.toString() || globalLastMessage.chat,
+              senderId: globalLastMessage.sender?._id?.toString() || globalLastMessage.sender,
+              senderName: globalLastMessage.sender?.username || "Пользователь", // Добавлено senderName
+              chatId: globalLastMessage.chat?.toString() || globalLastMessage.chat,
             }
           : null,
         messageCount: globalMessageCount,
         unreadCount: 0,
-      });
-      console.log("                                  ");
+      })
+      console.log("                                  ")
     }
 
-    console.log("📋 Отправляем список чатов:", chatList.length, "чатов");
-    res.json(chatList);
+    console.log("📋 Отправляем список чатов:", chatList.length, "чатов")
+    res.json(chatList)
   } catch (error) {
-    console.error("/api/chats error:", error);
-    res.status(500).json({ error: "Ошибка сервера" });
+    console.error("/api/chats error:", error)
+    res.status(500).json({ error: "Ошибка сервера" })
   }
-});
+})
 
 // Получение сообщений чата (MongoDB) с пагинацией
 app.get("/api/messages/:chatId", authenticateToken, async (req, res) => {
   try {
-    const { chatId } = req.params;
-    const userId = req.user.userId;
-    const page = parseInt(req.query.page) || 0;
-    const limit = parseInt(req.query.limit) || 50;
-    const skip = page * limit;
-    const chat = await Chat.findById(chatId).lean();
-    if (!chat) return res.status(404).json({ error: "Чат не найден" });
+    const { chatId } = req.params
+    const userId = req.user.userId
+    const page = Number.parseInt(req.query.page) || 0
+    const limit = Number.parseInt(req.query.limit) || 50
+    const skip = page * limit
+    const chat = await Chat.findById(chatId).lean()
+    if (!chat) return res.status(404).json({ error: "Чат не найден" })
 
     // Для глобального чата разрешаем всем пользователям получать сообщения
-    const isGlobalChat = chatId === "global";
+    const isGlobalChat = chatId === "global"
     const isParticipant =
       isGlobalChat ||
       chat.participants
         .filter((p) => p !== null)
         .map((id) => id.toString())
-        .includes(userId);
+        .includes(userId)
     if (!isParticipant) {
-      return res.status(403).json({ error: "Нет доступа к этому чату" });
+      return res.status(403).json({ error: "Нет доступа к этому чату" })
     }
 
     const chatMessages = await Message.find({ chat: chatId })
@@ -1283,152 +1230,144 @@ app.get("/api/messages/:chatId", authenticateToken, async (req, res) => {
       .sort({ timestamp: 1 })
       .skip(skip)
       .limit(limit)
-      .lean();
+      .lean()
 
     // Для каждого сообщения с replyTo подгружаем оригинал
     const messagesWithReply = await Promise.all(
       chatMessages.map(async (msg) => {
-        let replyTo = null;
+        let replyTo = null
         if (msg.replyTo) {
-          const originalMsg = await Message.findById(msg.replyTo)
-            .populate("sender", "username fullName")
-            .lean();
+          const originalMsg = await Message.findById(msg.replyTo).populate("sender", "username fullName").lean()
           if (originalMsg) {
-            let senderName = "Неизвестно";
+            let senderName = "Неизвестно"
             if (originalMsg.sender) {
-              senderName =
-                originalMsg.sender.username ||
-                originalMsg.sender.fullName ||
-                "Неизвестно";
+              senderName = originalMsg.sender.username || originalMsg.sender.fullName || "Неизвестно"
             }
             replyTo = {
               id: originalMsg._id?.toString() || originalMsg._id,
-              content: originalMsg.isEncrypted
-                ? decryptMessage(originalMsg.content)
-                : originalMsg.content,
+              content: originalMsg.isEncrypted ? decryptMessage(originalMsg.content) : originalMsg.content,
               senderName,
-            };
+            }
           }
         }
         return {
           ...msg,
           id: msg._id?.toString() || msg._id,
-          senderId:
-            msg.sender?._id?.toString() || msg.sender?.toString() || msg.sender,
-          senderName:
-            msg.sender?.username || msg.sender?.fullName || "Неизвестно", // Добавляем имя отправителя
+          senderId: msg.sender?._id?.toString() || msg.sender?.toString() || msg.sender,
+          senderName: msg.sender?.username || msg.sender?.fullName || "Неизвестно", // Добавляем имя отправителя
           chatId: msg.chat?.toString() || msg.chat,
           content: msg.isEncrypted ? decryptMessage(msg.content) : msg.content,
           replyTo, // теперь это объект, а не id
-        };
-      })
-    );
-    res.json(messagesWithReply);
+        }
+      }),
+    )
+    res.json(messagesWithReply)
   } catch (error) {
-    console.error("/api/messages/:chatId error:", error);
-    res.status(500).json({ error: "Ошибка сервера" });
+    console.error("/api/messages/:chatId error:", error)
+    res.status(500).json({ error: "Ошибка сервера" })
   }
-});
+})
 
 // Socket.IO аутентификация (MongoDB)
 io.use(async (socket, next) => {
   try {
-    const hdrAuth = socket.handshake.headers && socket.handshake.headers.authorization;
-    const queryToken = socket.handshake.query && (socket.handshake.query.token || socket.handshake.query.auth || socket.handshake.query.jwt);
-    const authToken = socket.handshake.auth && (socket.handshake.auth.token || socket.handshake.auth.jwt);
-    const token = authToken || (hdrAuth ? String(hdrAuth).replace(/^Bearer\s+/i, '') : null) || (queryToken ? String(queryToken) : null);
-    console.log("🔌 Socket.IO подключение, токен:", token ? "есть" : "нет");
+    const hdrAuth = socket.handshake.headers && socket.handshake.headers.authorization
+    const queryToken =
+      socket.handshake.query &&
+      (socket.handshake.query.token || socket.handshake.query.auth || socket.handshake.query.jwt)
+    const authToken = socket.handshake.auth && (socket.handshake.auth.token || socket.handshake.auth.jwt)
+    const token =
+      authToken ||
+      (hdrAuth ? String(hdrAuth).replace(/^Bearer\s+/i, "") : null) ||
+      (queryToken ? String(queryToken) : null)
+    console.log("🔌 Socket.IO подключение, токен:", token ? "есть" : "нет")
 
     if (!token) {
-      console.log("❌ Socket.IO: токен отсутствует");
-      return next(new Error("Токен аутентификации обязателен"));
+      console.log("❌ Socket.IO: токен отсутствует")
+      return next(new Error("Токен аутентификации обязателен"))
     }
 
     jwt.verify(token, JWT_SECRET, async (err, decoded) => {
       if (err) {
-        console.log("❌ Socket.IO: ошибка верификации токена:", err.message);
-        return next(new Error("Недействительный или истекший токен"));
+        console.log("❌ Socket.IO: ошибка верификации токена:", err.message)
+        return next(new Error("Недействительный или истекший токен"))
       }
 
       try {
         // Проверка бана по IP до допуска
-        const reqLike = { headers: socket.handshake.headers, ip: socket.request?.ip };
-        const clientIp = getClientIp(reqLike);
-        const banned = await BannedIP.findOne({ ip: clientIp }).lean();
+        const reqLike = { headers: socket.handshake.headers, ip: socket.request?.ip }
+        const clientIp = getClientIp(reqLike)
+        const banned = await BannedIP.findOne({ ip: clientIp }).lean()
         if (banned) {
-          console.log("❌ Socket.IO: IP забанен:", clientIp);
-          return next(new Error("IP забанен"));
+          console.log("❌ Socket.IO: IP забанен:", clientIp)
+          return next(new Error("IP забанен"))
         }
 
-        const user = await User.findById(decoded.userId).lean();
+        const user = await User.findById(decoded.userId).lean()
         if (!user) {
-          console.log("❌ Socket.IO: пользователь не найден в БД");
-          return next(new Error("Пользователь не найден"));
+          console.log("❌ Socket.IO: пользователь не найден в БД")
+          return next(new Error("Пользователь не найден"))
         }
 
-        socket.userId = user._id.toString();
+        socket.userId = user._id.toString()
         socket.user = {
           ...user,
           id: user._id.toString(), // Добавляем поле id для совместимости
-        };
+        }
         // Сохраняем последний IP
         try {
-          await User.findByIdAndUpdate(user._id, { lastIp: clientIp, lastSeen: new Date(), isOnline: true });
+          await User.findByIdAndUpdate(user._id, { lastIp: clientIp, lastSeen: new Date(), isOnline: true })
         } catch (e) {}
-        console.log(
-          "✅ Socket.IO: пользователь аутентифицирован:",
-          user.username,
-          user._id
-        );
-        next();
+        console.log("✅ Socket.IO: пользователь аутентифицирован:", user.username, user._id)
+        next()
       } catch (error) {
-        console.error("Socket auth error:", error);
-        return next(new Error("Ошибка аутентификации"));
+        console.error("Socket auth error:", error)
+        return next(new Error("Ошибка аутентификации"))
       }
-    });
+    })
   } catch (error) {
-    console.error("Socket auth error:", error);
-    return next(new Error("Ошибка аутентификации"));
+    console.error("Socket auth error:", error)
+    return next(new Error("Ошибка аутентификации"))
   }
-});
+})
 
 // Socket.IO обработчики
 io.on("connection", async (socket) => {
-  const user = socket.user;
-  console.log(`🔗 Подключение: ${user.username} (${socket.id})`);
+  const user = socket.user
+  console.log(`🔗 Подключение: ${user.username} (${socket.id})`)
 
-  activeConnections.set(socket.id, user.id);
+  activeConnections.set(socket.id, user.id)
   // При подключении обновлять статус пользователя в MongoDB
   await User.findByIdAndUpdate(user.id, {
     isOnline: true,
     lastSeen: new Date(),
     status: "online",
-  });
-  userHeartbeats.set(user.id, Date.now());
+  })
+  userHeartbeats.set(user.id, Date.now())
 
   // Присоединяем пользователя ко всем его чатам (MongoDB)
   try {
-    const userChats = await Chat.find({ participants: user.id }).lean();
+    const userChats = await Chat.find({ participants: user.id }).lean()
     for (const chat of userChats) {
-      socket.join(chat._id.toString());
+      socket.join(chat._id.toString())
     }
 
     // Всегда присоединяем к глобальному чату и добавляем пользователя в участники
-    socket.join("global");
-    globalChatOnline.add(socket.id);
-    io.to("global").emit("global_online_count", globalChatOnline.size);
+    socket.join("global")
+    globalChatOnline.add(socket.id)
+    io.to("global").emit("global_online_count", globalChatOnline.size)
 
     // Добавляем пользователя в участники глобального чата если его там нет
-    const globalChat = await Chat.findById("global");
+    const globalChat = await Chat.findById("global")
     if (globalChat && !globalChat.participants.includes(user.id)) {
-      globalChat.participants.push(user.id);
-      await globalChat.save();
-      console.log(`🌍 ${user.username} добавлен в участники глобального чата`);
+      globalChat.participants.push(user.id)
+      await globalChat.save()
+      console.log(`🌍 ${user.username} добавлен в участники глобального чата`)
     }
 
-    console.log(`🌍 ${user.username} присоединен к глобальному чату`);
+    console.log(`🌍 ${user.username} присоединен к глобальному чату`)
   } catch (error) {
-    console.error("Error joining user chats:", error);
+    console.error("Error joining user chats:", error)
   }
 
   // Получение чатов пользователя (MongoDB)
@@ -1436,20 +1375,18 @@ io.on("connection", async (socket) => {
     try {
       if (userId === user.id) {
         const chats = await Chat.find({ participants: user.id })
-          .populate(
-            "participants",
-            "_id username fullName avatar isOnline isVerified status"
-          )
-          .lean();
+          .populate("participants", "_id username fullName avatar isOnline isVerified status")
+          .lean()
 
         const chatList = await Promise.all(
           chats.map(async (chat) => {
             const lastMessage = await Message.findOne({ chat: chat._id })
               .sort({ timestamp: -1 })
-              .lean();
+              .populate("sender", "username fullName avatar")
+              .lean()
             const messageCount = await Message.countDocuments({
               chat: chat._id,
-            });
+            })
             return {
               ...chat,
               id: chat._id?.toString() || chat._id,
@@ -1458,30 +1395,28 @@ io.on("connection", async (socket) => {
                 ? {
                     ...lastMessage,
                     id: lastMessage._id?.toString() || lastMessage._id,
-                    senderId:
-                      lastMessage.sender?.toString() || lastMessage.sender,
+                    senderId: lastMessage.sender?._id?.toString() || lastMessage.sender,
+                    senderName: lastMessage.sender?.username || "Пользователь", // Добавлено senderName
                     chatId: lastMessage.chat?.toString() || lastMessage.chat,
                   }
                 : null,
               messageCount,
               unreadCount: 0,
-            };
-          })
-        );
+            }
+          }),
+        )
 
         // Всегда добавляем глобальный чат в начало списка
-        const globalChat = await Chat.findById("global").lean();
-        if (
-          globalChat &&
-          !chatList.some((chat) => (chat.id || chat._id) === "global")
-        ) {
+        const globalChat = await Chat.findById("global").lean()
+        if (globalChat && !chatList.some((chat) => (chat.id || chat._id) === "global")) {
           //
           const globalLastMessage = await Message.findOne({ chat: "global" })
             .sort({ timestamp: -1 })
-            .lean();
+            .populate("sender", "username fullName avatar")
+            .lean()
           const globalMessageCount = await Message.countDocuments({
             chat: "global",
-          });
+          })
           chatList.unshift({
             ...globalChat,
             id: globalChat._id?.toString() || globalChat._id,
@@ -1489,58 +1424,53 @@ io.on("connection", async (socket) => {
             lastMessage: globalLastMessage
               ? {
                   ...globalLastMessage,
-                  id:
-                    globalLastMessage._id?.toString() || globalLastMessage._id,
-                  senderId:
-                    globalLastMessage.sender?.toString() ||
-                    globalLastMessage.sender,
-                  chatId:
-                    globalLastMessage.chat?.toString() ||
-                    globalLastMessage.chat,
+                  id: globalLastMessage._id?.toString() || globalLastMessage._id,
+                  senderId: globalLastMessage.sender?._id?.toString() || globalLastMessage.sender,
+                  senderName: globalLastMessage.sender?.username || "Пользователь", // Добавлено senderName
+                  chatId: globalLastMessage.chat?.toString() || globalLastMessage.chat,
                 }
               : null,
             messageCount: globalMessageCount,
             unreadCount: 0,
-          });
-          console.log("                                  ");
+          })
         }
 
-        socket.emit("my_chats", chatList);
+        socket.emit("my_chats", chatList)
       }
     } catch (error) {
-      console.error("get_my_chats error:", error);
-      socket.emit("my_chats", []);
+      console.error("Error in get_my_chats:", error)
+      socket.emit("my_chats", [])
     }
-  });
+  })
 
   // Получение сообщений (MongoDB)
   socket.on("get_messages", async (data) => {
     try {
-      const { chatId, userId } = data;
-      const page = 0;
-      const limit = 50;
-      const skip = page * limit;
+      const { chatId, userId } = data
+      const page = 0
+      const limit = 50
+      const skip = page * limit
 
-      console.log(`📨 Запрос сообщений для чата: ${chatId}`);
+      console.log(`📨 Запрос сообщений для чата: ${chatId}`)
 
       // Для глобального чата разрешаем всем пользователям получать сообщения
-      const isGlobalChat = chatId === "global";
+      const isGlobalChat = chatId === "global"
       if (!isGlobalChat) {
-        const chat = await Chat.findById(chatId).lean();
+        const chat = await Chat.findById(chatId).lean()
         if (!chat) {
-          console.log(`❌ Чат не найден: ${chatId}`);
-          socket.emit("chat_messages", { chatId, messages: [] });
-          return;
+          console.log(`❌ Чат не найден: ${chatId}`)
+          socket.emit("chat_messages", { chatId, messages: [] })
+          return
         }
 
         const isParticipant = chat.participants
           .filter((p) => p !== null)
           .map((id) => id.toString())
-          .includes(user.id);
+          .includes(user.id)
         if (!isParticipant) {
-          console.log(`❌ Пользователь не является участником чата: ${chatId}`);
-          socket.emit("chat_messages", { chatId, messages: [] });
-          return;
+          console.log(`❌ Пользователь не является участником чата: ${chatId}`)
+          socket.emit("chat_messages", { chatId, messages: [] })
+          return
         }
       }
 
@@ -1549,37 +1479,35 @@ io.on("connection", async (socket) => {
         .sort({ timestamp: 1 })
         .skip(skip)
         .limit(limit)
-        .lean();
+        .lean()
 
       const decryptedMessages = chatMessages.map((msg) => ({
         ...msg,
         id: msg._id?.toString() || msg._id,
-        senderId:
-          msg.sender?._id?.toString() || msg.sender?.toString() || msg.sender,
-        senderName:
-          msg.sender?.username || msg.sender?.fullName || "Неизвестно", // Добавляем имя отправителя
+        senderId: msg.sender?._id?.toString() || msg.sender?.toString() || msg.sender,
+        senderName: msg.sender?.username || msg.sender?.fullName || "Неизвестно", // Добавляем имя отправителя
         chatId: msg.chat?.toString() || msg.chat,
         content: msg.isEncrypted ? decryptMessage(msg.content) : msg.content,
-      }));
+      }))
 
-      socket.emit("chat_messages", { chatId, messages: decryptedMessages });
+      socket.emit("chat_messages", { chatId, messages: decryptedMessages })
     } catch (error) {
-      console.error("get_messages error:", error);
+      console.error("get_messages error:", error)
       socket.emit("chat_messages", {
         chatId: data?.chatId || "unknown",
         messages: [],
-      });
+      })
     }
-  });
+  })
 
   // Поиск пользователей (MongoDB)
   socket.on("search_users", async (query) => {
     try {
       if (!query || typeof query !== "string" || query.length < 2) {
-        socket.emit("search_results", []);
-        return;
+        socket.emit("search_results", [])
+        return
       }
-      const searchTerm = query.toLowerCase();
+      const searchTerm = query.toLowerCase()
       const usersFound = await User.find({
         $or: [
           { username: { $regex: searchTerm, $options: "i" } },
@@ -1589,7 +1517,7 @@ io.on("connection", async (socket) => {
         _id: { $ne: user.id },
       })
         .limit(10)
-        .lean();
+        .lean()
       const results = usersFound.map((u) => ({
         id: u._id.toString(),
         username: u.username,
@@ -1600,41 +1528,37 @@ io.on("connection", async (socket) => {
         isOnline: u.isOnline,
         isVerified: u.isVerified,
         status: u.status,
-      }));
-      socket.emit("search_results", results);
+      }))
+      socket.emit("search_results", results)
     } catch (error) {
-      console.error("search_users error:", error);
-      socket.emit("search_results", []);
+      console.error("search_users error:", error)
+      socket.emit("search_results", [])
     }
-  });
+  })
 
   // Создание приватного чата (MongoDB)
   socket.on("create_private_chat", async (data) => {
     try {
-      console.log(
-        `💬 Попытка создания приватного чата: ${user.username} -> ${data.userId}`
-      );
-      console.log(`💬 Данные чата:`, data);
+      console.log(`💬 Попытка создания приватного чата: ${user.username} -> ${data.userId}`)
+      console.log(`💬 Данные чата:`, data)
 
-      const { userId, chatId, createdBy } = data;
-      console.log(
-        `🔍 Проверка создателя чата: createdBy=${createdBy}, user.id=${user.id}`
-      );
+      const { userId, chatId, createdBy } = data
+      console.log(`🔍 Проверка создателя чата: createdBy=${createdBy}, user.id=${user.id}`)
 
       // Проверяем, что создатель чата - это текущий пользователь
       if (createdBy && createdBy !== user.id) {
-        console.log(`❌ Неверный создатель чата: ${createdBy} != ${user.id}`);
-        return;
+        console.log(`❌ Неверный создатель чата: ${createdBy} != ${user.id}`)
+        return
       }
 
       // Проверить, существует ли уже такой чат
-      let chat = await Chat.findById(chatId);
+      let chat = await Chat.findById(chatId)
       if (!chat) {
-        console.log(`📝 Создание нового чата: ${chatId}`);
+        console.log(`📝 Создание нового чата: ${chatId}`)
 
         // Получить информацию о собеседнике
-        const otherUser = await User.findById(userId).lean();
-        const otherUserName = otherUser ? otherUser.username : "Неизвестно";
+        const otherUser = await User.findById(userId).lean()
+        const otherUserName = otherUser ? otherUser.username : "Неизвестно"
 
         // Создать новый чат
         chat = await Chat.create({
@@ -1651,42 +1575,35 @@ io.on("connection", async (socket) => {
           theme: "default",
           isPinned: false,
           isMuted: false,
-        });
-        console.log(
-          `✅ Чат создан автоматически: ${chat._id} с собеседником: ${otherUserName}`
-        );
+        })
+        console.log(`✅ Чат создан автоматически: ${chat._id} с собеседником: ${otherUserName}`)
       } else {
-        console.log(`📋 Чат уже существует: ${chat._id}`);
+        console.log(`📋 Чат уже существует: ${chat._id}`)
       }
 
       // Получить участников
       const populatedChat = await Chat.findById(chat._id)
-        .populate(
-          "participants",
-          "_id username fullName avatar isOnline isVerified status"
-        )
-        .lean();
+        .populate("participants", "_id username fullName avatar isOnline isVerified status")
+        .lean()
 
-      console.log(`📋 Участники чата:`, populatedChat.participants);
+      console.log(`📋 Участники чата:`, populatedChat.participants)
 
       // Присоединяем текущего пользователя к чату
-      socket.join(chatId);
-      console.log(`✅ ${user.username} присоединен к чату: ${chatId}`);
+      socket.join(chatId)
+      console.log(`✅ ${user.username} присоединен к чату: ${chatId}`)
 
       // Находим и присоединяем второго пользователя
-      const targetSocket = Array.from(io.sockets.sockets.values()).find(
-        (s) => s.userId === userId
-      );
+      const targetSocket = Array.from(io.sockets.sockets.values()).find((s) => s.userId === userId)
       if (targetSocket) {
-        targetSocket.join(chatId);
-        console.log(`✅ Второй пользователь присоединен к чату: ${chatId}`);
+        targetSocket.join(chatId)
+        console.log(`✅ Второй пользователь присоединен к чату: ${chatId}`)
         targetSocket.emit("new_private_chat", {
           ...populatedChat,
           id: populatedChat._id?.toString() || populatedChat._id,
           participants: populatedChat.participants.filter((p) => p !== null),
-        });
+        })
       } else {
-        console.log(`� ️ Второй пользователь не найден онлайн: ${userId}`);
+        console.log(`� ️ Второй пользователь не найден онлайн: ${userId}`)
       }
 
       // Отправляем событие текущему пользователю
@@ -1694,88 +1611,76 @@ io.on("connection", async (socket) => {
         ...populatedChat,
         id: populatedChat._id?.toString() || populatedChat._id,
         participants: populatedChat.participants.filter((p) => p !== null),
-      });
+      })
 
-      console.log(`💬 Создан приватный чат: ${user.username} ↔ ${userId}`);
+      console.log(`💬 Создан приватный чат: ${user.username} ↔ ${userId}`)
     } catch (error) {
-      console.error("create_private_chat error:", error);
+      console.error("create_private_chat error:", error)
     }
-  });
+  })
 
   // Присоединение к чату (MongoDB)
   socket.on("join_chat", async (chatId) => {
     try {
-      console.log(
-        `📥 Попытка присоединения к чату: ${user.username} -> ${chatId}`
-      );
+      console.log(`📥 Попытка присоединения к чату: ${user.username} -> ${chatId}`)
 
       // Для глобального чата не проверяем существование
       if (chatId === "global") {
-        socket.join(chatId);
-        globalChatOnline.add(socket.id);
-        io.to("global").emit("global_online_count", globalChatOnline.size);
-        console.log(`✅ ${user.username} присоединился к глобальному чату`);
-        return;
+        socket.join(chatId)
+        globalChatOnline.add(socket.id)
+        io.to("global").emit("global_online_count", globalChatOnline.size)
+        console.log(`✅ ${user.username} присоединился к глобальному чату`)
+        return
       }
 
-      const chat = await Chat.findById(chatId);
+      const chat = await Chat.findById(chatId)
       if (!chat) {
-        console.log(`❌ Чат не найден: ${chatId}`);
-        socket.emit("error", { message: "Чат не найден" });
-        return;
+        console.log(`❌ Чат не найден: ${chatId}`)
+        socket.emit("error", { message: "Чат не найден" })
+        return
       }
 
-      console.log(`📋 Участники чата:`, chat.participants);
-      console.log(`👤 Текущий пользователь: ${user.id}`);
+      console.log(`📋 Участники чата:`, chat.participants)
+      console.log(`👤 Текущий пользователь: ${user.id}`)
 
       // Проверяем, является ли пользователь участником чата
-      const isParticipant = chat.participants.some(
-        (p) => p && p.toString() === user.id
-      );
+      const isParticipant = chat.participants.some((p) => p && p.toString() === user.id)
       if (!isParticipant) {
-        console.log(
-          `❌ Пользователь ${user.username} не является участником чата ${chatId}`
-        );
+        console.log(`❌ Пользователь ${user.username} не является участником чата ${chatId}`)
         socket.emit("error", {
           message: "Вы не являетесь участником этого чата",
-        });
-        return;
+        })
+        return
       }
 
-      socket.join(chatId);
-      console.log(`✅ ${user.username} присоединился к чату: ${chatId}`);
+      socket.join(chatId)
+      console.log(`✅ ${user.username} присоединился к чату: ${chatId}`)
     } catch (error) {
-      console.error("join_chat error:", error);
-      socket.emit("error", { message: "Ошибка присоединения к чату" });
+      console.error("join_chat error:", error)
+      socket.emit("error", { message: "Ошибка присоединения к чату" })
     }
-  });
+  })
 
   // Отправка сообщения (MongoDB)
   socket.on("send_message", async (messageData) => {
     try {
-      console.log(
-        `📤 Попытка отправки сообщения: ${user.username} -> ${messageData.chatId}`
-      );
-      console.log(`📤 Данные сообщения:`, messageData);
+      console.log(`📤 Попытка отправки сообщения: ${user.username} -> ${messageData.chatId}`)
+      console.log(`📤 Данные сообщения:`, messageData)
 
-      let chat = await Chat.findById(messageData.chatId);
+      let chat = await Chat.findById(messageData.chatId)
       if (!chat) {
-        console.log(`❌ Чат не найден: ${messageData.chatId}`);
+        console.log(`❌ Чат не найден: ${messageData.chatId}`)
 
         // Попробуем создать чат, если он не существует
         if (messageData.chatId.startsWith("private_")) {
-          const participantIds = messageData.chatId
-            .replace("private_", "")
-            .split("_");
+          const participantIds = messageData.chatId.replace("private_", "").split("_")
           if (participantIds.length >= 2) {
-            console.log(`📝 Попытка создания чата: ${messageData.chatId}`);
+            console.log(`📝 Попытка создания чата: ${messageData.chatId}`)
 
             // Найти собеседника (не текущего пользователя)
-            const otherUserId = participantIds.find((id) => id !== user.id);
-            const otherUser = otherUserId
-              ? await User.findById(otherUserId).lean()
-              : null;
-            const otherUserName = otherUser ? otherUser.username : "Неизвестно";
+            const otherUserId = participantIds.find((id) => id !== user.id)
+            const otherUser = otherUserId ? await User.findById(otherUserId).lean() : null
+            const otherUserName = otherUser ? otherUser.username : "Неизвестно"
 
             chat = await Chat.create({
               _id: messageData.chatId,
@@ -1791,81 +1696,69 @@ io.on("connection", async (socket) => {
               theme: "default",
               isPinned: false,
               isMuted: false,
-            });
-            console.log(
-              `✅ Чат создан автоматически: ${chat._id} с собеседником: ${otherUserName}`
-            );
+            })
+            console.log(`✅ Чат создан автоматически: ${chat._id} с собеседником: ${otherUserName}`)
           }
         }
 
         if (!chat) {
-          console.log(`❌ Не удалось создать чат: ${messageData.chatId}`);
+          console.log(`❌ Не удалось создать чат: ${messageData.chatId}`)
           socket.emit("error", {
             message: "Чат не найден и не может быть создан",
-          });
-          return;
+          })
+          return
         }
       }
 
-      console.log(`📋 Участники чата:`, chat.participants);
-      console.log(`👤 Текущий пользователь: ${user.id}`);
+      console.log(`📋 Участники чата:`, chat.participants)
+      console.log(`👤 Текущий пользователь: ${user.id}`)
 
       // Проверяем, является ли пользователь участником чата
       // Для глобального чата разрешаем всем пользователям отправлять сообщения
-      const isGlobalChat = messageData.chatId === "global";
-      const isParticipant =
-        isGlobalChat ||
-        chat.participants.some((p) => p && p.toString() === user.id);
+      const isGlobalChat = messageData.chatId === "global"
+      const isParticipant = isGlobalChat || chat.participants.some((p) => p && p.toString() === user.id)
       if (!isParticipant) {
-        console.log(
-          `❌ Пользователь ${user.username} не является участником чата ${messageData.chatId}`
-        );
+        console.log(`❌ Пользователь ${user.username} не является участником чата ${messageData.chatId}`)
         socket.emit("error", {
           message: "Вы не являетесь участником этого чата",
-        });
-        return;
+        })
+        return
       }
 
       // Rate limiting для глобального чата (5 секунд между сообщениями)
       if (isGlobalChat) {
-        const now = Date.now();
-        const lastTimestamp = globalChatRateLimit.get(user.id) || 0;
+        const now = Date.now()
+        const lastTimestamp = globalChatRateLimit.get(user.id) || 0
         if (now - lastTimestamp < 5000) {
           // 5 секунд
           socket.emit("error", {
             message: "В общий чат можно отправлять сообщение раз в 5 секунд!",
-          });
-          return;
+          })
+          return
         }
-        globalChatRateLimit.set(user.id, now);
+        globalChatRateLimit.set(user.id, now)
       }
 
       // Ограничение на количество слов (100 слов для всех чатов)
-      const originalContent = messageData.isEncrypted
-        ? decryptMessage(messageData.content)
-        : messageData.content;
-      const wordCount = originalContent.split(/\s+/).filter(Boolean).length;
+      const originalContent = messageData.isEncrypted ? decryptMessage(messageData.content) : messageData.content
+      const wordCount = originalContent.split(/\s+/).filter(Boolean).length
       if (wordCount > 100) {
         socket.emit("error", {
           message: "Сообщение не должно содержать более 100 слов!",
-        });
-        return;
+        })
+        return
       }
 
       // Валидация сообщения
-      if (
-        !messageData.content ||
-        typeof messageData.content !== "string" ||
-        messageData.content.trim().length === 0
-      ) {
-        console.log(`❌ Неверное содержимое сообщения`);
-        socket.emit("error", { message: "Сообщение не может быть пустым" });
-        return;
+      if (!messageData.content || typeof messageData.content !== "string" || messageData.content.trim().length === 0) {
+        console.log(`❌ Неверное содержимое сообщения`)
+        socket.emit("error", { message: "Сообщение не может быть пустым" })
+        return
       }
 
       if (messageData.content.length > 1000) {
-        socket.emit("error", { message: "Сообщение слишком длинное" });
-        return;
+        socket.emit("error", { message: "Сообщение слишком длинное" })
+        return
       }
 
       // Создать сообщение - сохраняем как есть (уже зашифрованное с клиента)
@@ -1883,28 +1776,25 @@ io.on("connection", async (socket) => {
         reactions: [],
         readBy: [user.id],
         isEdited: false,
-      });
+      })
 
-      console.log(`✅ Сообщение создано в БД: ${message._id}`);
+      console.log(`✅ Сообщение создано в БД: ${message._id}`)
 
       // Формируем replyTo для UI, если это ответ
-      let replyToData = null;
+      let replyToData = null
       if (message.replyTo) {
-        const originalMsg = await Message.findById(message.replyTo).lean();
+        const originalMsg = await Message.findById(message.replyTo).lean()
         if (originalMsg) {
-          let senderName = "Неизвестно";
+          let senderName = "Неизвестно"
           if (originalMsg.sender) {
-            const senderUser = await User.findById(originalMsg.sender).lean();
-            senderName =
-              senderUser?.username || senderUser?.fullName || "Неизвестно";
+            const senderUser = await User.findById(originalMsg.sender).lean()
+            senderName = senderUser?.username || senderUser?.fullName || "Неизвестно"
           }
           replyToData = {
             id: originalMsg._id?.toString() || originalMsg._id,
-            content: originalMsg.isEncrypted
-              ? decryptMessage(originalMsg.content)
-              : originalMsg.content,
+            content: originalMsg.isEncrypted ? decryptMessage(originalMsg.content) : originalMsg.content,
             senderName,
-          };
+          }
         }
       }
 
@@ -1916,243 +1806,231 @@ io.on("connection", async (socket) => {
         chatId: chat._id?.toString() || chat._id,
         content: messageData.content, // Отправляем как есть - клиент сам расшифрует
         replyTo: replyToData,
-      };
+      }
 
-      console.log(`📤 Отправка сообщения в комнату: ${chat._id}`);
-      console.log(`📤 Содержимое сообщения:`, msgObj);
+      console.log(`','$ отправитель: ${user.username}`)
+      console.log(`','$ чат: ${chat._id}`)
+      console.log(`','$ содержимое:`, msgObj.content)
+      console.log(`','$ replyTo:`, msgObj.replyTo)
 
       // Отправляем сообщение всем участникам чата
-      io.to(chat._id.toString()).emit("new_message", msgObj);
+      io.to(chat._id.toString()).emit("new_message", msgObj)
 
       // Для глобального чата также отправляем всем подключенным пользователям
       if (isGlobalChat) {
-        console.log(
-          `🌍 Отправка сообщения во все подключения для глобального чата`
-        );
-        io.emit("new_message", msgObj);
+        console.log(`🌍 Отправка сообщения во все подключения для глобального чата`)
+        io.emit("new_message", msgObj)
       }
 
       // Если чат приватный, отправить событие 'new_private_chat' второму участнику
       if (chat.type === "private") {
-        console.log(`💬 Приватный чат, участники:`, chat.participants);
+        console.log(`💬 Приватный чат, участники:`, chat.participants)
         chat.participants.forEach((participantId) => {
           if (participantId.toString() !== user.id) {
-            console.log(`🔍 Ищем сокет для пользователя: ${participantId}`);
+            console.log(`🔍 Ищем сокет для пользователя: ${participantId}`)
             const targetSocket = Array.from(io.sockets.sockets.values()).find(
-              (s) => s.userId === participantId.toString()
-            );
+              (s) => s.userId === participantId.toString(),
+            )
             if (targetSocket) {
-              console.log(
-                `✅ Найден сокет для пользователя ${participantId}, отправляем уведомление о новом чате`
-              );
+              console.log(`✅ Найден сокет для пользователя ${participantId}, отправляем уведомление о новом чате`)
               // Проверяем, есть ли у пользователя этот чат (можно добавить проверку, если нужно)
               targetSocket.emit("new_private_chat", {
                 ...chat,
                 id: chat._id?.toString() || chat._id,
                 participants: chat.participants,
-              });
+              })
             } else {
-              console.log(
-                `� ️ Сокет для пользователя ${participantId} не найден`
-              );
+              console.log(`� ️ Сокет для пользователя ${participantId} не найден`)
             }
           }
-        });
+        })
       }
 
-      console.log(
-        `💬 Сообщение от ${user.username} в чат ${chat._id} отправлено успешно`
-      );
+      console.log(`💬 Сообщение от ${user.username} в чат ${chat._id} отправлено успешно`)
     } catch (error) {
-      console.error("send_message error:", error);
-      socket.emit("error", { message: "Ошибка отправки сообщения" });
+      console.error("send_message error:", error)
+      socket.emit("error", { message: "Ошибка отправки сообщения" })
     }
-  });
+  })
 
   // � еакции на сообщения (MongoDB)
   socket.on("add_reaction", async (data) => {
     try {
-      const { messageId, emoji, userId, username } = data;
-      if (userId !== user.id) return;
-      if (!emoji || !reactionEmojis.includes(emoji)) return;
+      const { messageId, emoji, userId, username } = data
+      if (userId !== user.id) return
+      if (!emoji || !reactionEmojis.includes(emoji)) return
       // Найти сообщение
-      const message = await Message.findById(messageId);
-      if (!message) return;
+      const message = await Message.findById(messageId)
+      if (!message) return
       // Проверить, есть ли уже реакция от этого пользователя
-      const existing = message.reactions.find(
-        (r) => r.userId === userId && r.emoji === emoji
-      );
+      const existing = message.reactions.find((r) => r.userId === userId && r.emoji === emoji)
       if (existing) {
         // Удалить реакцию
-        message.reactions = message.reactions.filter(
-          (r) => !(r.userId === userId && r.emoji === emoji)
-        );
+        message.reactions = message.reactions.filter((r) => !(r.userId === userId && r.emoji === emoji))
       } else {
         // Добавить реакцию
-        message.reactions.push({ emoji, userId, username });
+        message.reactions.push({ emoji, userId, username })
       }
-      await message.save();
-      const chatId = message.chat?.toString() || message.chat;
+      await message.save()
+      const chatId = message.chat?.toString() || message.chat
       io.to(chatId).emit("message_reaction", {
         messageId: message._id?.toString() || message._id,
         reactions: message.reactions,
-      });
+      })
     } catch (error) {
-      console.error("add_reaction error:", error);
+      console.error("add_reaction error:", error)
     }
-  });
+  })
 
   // Печатает сообщение (MongoDB check)
   socket.on("typing", async (data) => {
     try {
-      const { chatId, userId, username } = data;
-      const chat = await Chat.findById(chatId);
-      if (!chat) return;
+      const { chatId, userId, username } = data
+      const chat = await Chat.findById(chatId)
+      if (!chat) return
       if (
         !chat.participants
           .filter((p) => p !== null)
           .map((id) => id.toString())
           .includes(user.id)
       )
-        return;
+        return
       if (!typingUsers.has(chatId)) {
-        typingUsers.set(chatId, new Set());
+        typingUsers.set(chatId, new Set())
       }
-      typingUsers.get(chatId).add(userId);
-      socket.to(chatId).emit("user_typing", { userId, username, chatId });
+      typingUsers.get(chatId).add(userId)
+      socket.to(chatId).emit("user_typing", { userId, username, chatId })
     } catch (error) {
-      console.error("typing error:", error);
+      console.error("typing error:", error)
     }
-  });
+  })
 
   // Перестал печатать (MongoDB check)
   socket.on("stop_typing", async (data) => {
     try {
-      const { chatId } = data;
-      const chat = await Chat.findById(chatId);
-      if (!chat) return;
+      const { chatId } = data
+      const chat = await Chat.findById(chatId)
+      if (!chat) return
       if (
         !chat.participants
           .filter((p) => p !== null)
           .map((id) => id.toString())
           .includes(user.id)
       )
-        return;
+        return
       if (typingUsers.has(chatId)) {
-        typingUsers.get(chatId).delete(user.id);
+        typingUsers.get(chatId).delete(user.id)
         if (typingUsers.get(chatId).size === 0) {
-          typingUsers.delete(chatId);
+          typingUsers.delete(chatId)
         }
       }
-      socket.to(chatId).emit("user_stop_typing", { userId: user.id, chatId });
+      socket.to(chatId).emit("user_stop_typing", { userId: user.id, chatId })
     } catch (error) {
-      console.error("stop_typing error:", error);
+      console.error("stop_typing error:", error)
     }
-  });
+  })
 
   // Очистка чата (MongoDB)
   socket.on("clear_chat", async (chatId) => {
     try {
-      const chat = await Chat.findById(chatId);
-      if (!chat) return;
+      const chat = await Chat.findById(chatId)
+      if (!chat) return
 
       // Проверяем права для глобального чата
-      const isGlobalChat = chatId === "global";
-      const isAdmin = user.isAdmin;
+      const isGlobalChat = chatId === "global"
+      const isAdmin = user.isAdmin
       const isParticipant = chat.participants
         .filter((p) => p !== null)
         .map((id) => id.toString())
-        .includes(user.id);
-      const isCreator = chat.createdBy?.toString() === user.id;
+        .includes(user.id)
+      const isCreator = chat.createdBy?.toString() === user.id
 
       if (isGlobalChat && !isAdmin) {
         socket.emit("error", {
           message: "Только администратор может очищать глобальный чат",
-        });
-        return;
+        })
+        return
       }
 
       if (!isParticipant && !isCreator && !isGlobalChat) {
-        socket.emit("error", { message: "Нет прав для очистки этого чата" });
-        return;
+        socket.emit("error", { message: "Нет прав для очистки этого чата" })
+        return
       }
 
-      await Message.deleteMany({ chat: chatId });
-      io.to(chatId).emit("chat_cleared", { chatId });
-      console.log(`🧹 Чат ${chatId} очищен пользователем ${user.username}`);
+      await Message.deleteMany({ chat: chatId })
+      io.to(chatId).emit("chat_cleared", { chatId })
+      console.log(`🧹 Чат ${chatId} очищен пользователем ${user.username}`)
     } catch (error) {
-      console.error("clear_chat error:", error);
+      console.error("clear_chat error:", error)
     }
-  });
+  })
 
   // Обновление настроек чата
   socket.on("update_chat_settings", async (data) => {
     try {
-      const { chatId, isPinned, isMuted } = data;
-      const chat = await Chat.findById(chatId);
-      if (!chat) return;
+      const { chatId, isPinned, isMuted } = data
+      const chat = await Chat.findById(chatId)
+      if (!chat) return
 
       // Проверяем права
       const isParticipant = chat.participants
         .filter((p) => p !== null)
         .map((id) => id.toString())
-        .includes(user.id);
-      const isCreator = chat.createdBy?.toString() === user.id;
+        .includes(user.id)
+      const isCreator = chat.createdBy?.toString() === user.id
 
       if (!isParticipant && !isCreator) {
         socket.emit("error", {
           message: "Нет прав для изменения настроек чата",
-        });
-        return;
+        })
+        return
       }
 
-      const updateData = {};
-      if (isPinned !== undefined) updateData.isPinned = isPinned;
-      if (isMuted !== undefined) updateData.isMuted = isMuted;
+      const updateData = {}
+      if (isPinned !== undefined) updateData.isPinned = isPinned
+      if (isMuted !== undefined) updateData.isMuted = isMuted
 
-      await Chat.findByIdAndUpdate(chatId, updateData);
+      await Chat.findByIdAndUpdate(chatId, updateData)
 
       // Уведомляем всех участников чата об изменении
       io.to(chatId).emit("chat_settings_updated", {
         chatId,
         isPinned,
         isMuted,
-      });
+      })
 
-      console.log(
-        `⚙️ Настройки чата ${chatId} обновлены пользователем ${user.username}`
-      );
+      console.log(`⚙️ Настройки чата ${chatId} обновлены пользователем ${user.username}`)
     } catch (error) {
-      console.error("update_chat_settings error:", error);
+      console.error("update_chat_settings error:", error)
     }
-  });
+  })
 
   // Heartbeat для отслеживания активности
   socket.on("heartbeat", () => {
-    userHeartbeats.set(user.id, Date.now());
-  });
+    userHeartbeats.set(user.id, Date.now())
+  })
 
   // Обновление профиля (MongoDB)
   socket.on("update_profile", async (userData) => {
     try {
       // Валидация данных профиля
-      const allowedFields = ["fullName", "bio", "avatar"];
-      const sanitizedData = {};
+      const allowedFields = ["fullName", "bio", "avatar"]
+      const sanitizedData = {}
       for (const field of allowedFields) {
         if (userData[field] !== undefined) {
           if (field === "fullName" && userData[field]) {
-            sanitizedData[field] = userData[field].trim().substring(0, 50);
+            sanitizedData[field] = userData[field].trim().substring(0, 50)
           } else if (field === "bio" && userData[field]) {
-            sanitizedData[field] = userData[field].trim().substring(0, 200);
+            sanitizedData[field] = userData[field].trim().substring(0, 200)
           } else {
-            sanitizedData[field] = userData[field];
+            sanitizedData[field] = userData[field]
           }
         }
       }
-      await User.findByIdAndUpdate(user.id, sanitizedData);
+      await User.findByIdAndUpdate(user.id, sanitizedData)
       // Обновляем пользователя во всех чатах (MongoDB не требует этого, но можно обновить в памяти)
       // Уведомляем всех об обновлении
-      const activeUsers = await User.find({ isOnline: true }).lean();
+      const activeUsers = await User.find({ isOnline: true }).lean()
       io.emit(
         "users_update",
         activeUsers.map((u) => ({
@@ -2164,25 +2042,25 @@ io.on("connection", async (socket) => {
           isOnline: u.isOnline,
           isVerified: u.isVerified,
           status: u.status,
-        }))
-      );
-      console.log(`👤 ${user.username} обновил профиль`);
+        })),
+      )
+      console.log(`👤 ${user.username} обновил профиль`)
     } catch (error) {
-      console.error("update_profile error:", error);
+      console.error("update_profile error:", error)
     }
-  });
+  })
 
   // Отключение
   socket.on("disconnect", async () => {
-    activeConnections.delete(socket.id);
+    activeConnections.delete(socket.id)
     // Удаляем из всех typing lists
     for (const [chatId, typingSet] of typingUsers.entries()) {
       if (typingSet.has(user.id)) {
-        typingSet.delete(user.id);
+        typingSet.delete(user.id)
         if (typingSet.size === 0) {
-          typingUsers.delete(chatId);
+          typingUsers.delete(chatId)
         }
-        socket.to(chatId).emit("user_stop_typing", { userId: user.id, chatId });
+        socket.to(chatId).emit("user_stop_typing", { userId: user.id, chatId })
       }
     }
     // Обновить статус пользователя в MongoDB
@@ -2190,13 +2068,13 @@ io.on("connection", async (socket) => {
       isOnline: false,
       lastSeen: new Date(),
       status: "offline",
-    });
+    })
     // Удаляем из heartbeat tracking
-    userHeartbeats.delete(user.id);
-    globalChatOnline.delete(socket.id);
-    io.to("global").emit("global_online_count", globalChatOnline.size);
+    userHeartbeats.delete(user.id)
+    globalChatOnline.delete(socket.id)
+    io.to("global").emit("global_online_count", globalChatOnline.size)
     // Обновляем список активных пользователей
-    const activeUsers = await User.find({ isOnline: true }).lean();
+    const activeUsers = await User.find({ isOnline: true }).lean()
     io.emit(
       "users_update",
       activeUsers.map((u) => ({
@@ -2208,53 +2086,53 @@ io.on("connection", async (socket) => {
         isOnline: u.isOnline,
         isVerified: u.isVerified,
         status: u.status,
-      }))
-    );
-    console.log(`🔌 Отключение: ${user.username}`);
-  });
+      })),
+    )
+    console.log(`🔌 Отключение: ${user.username}`)
+  })
 
   //                    (                                         )
   socket.on("delete_message", async (data) => {
     try {
-      const { messageId } = data;
-      const message = await Message.findById(messageId);
+      const { messageId } = data
+      const message = await Message.findById(messageId)
       if (!message) {
-        socket.emit("error", { message: "                    " });
-        return;
+        socket.emit("error", { message: "                    " })
+        return
       }
       //
       if (message.sender.toString() !== user.id) {
-        socket.emit("error", { message: "                                  " });
-        return;
+        socket.emit("error", { message: "                                  " })
+        return
       }
-      await Message.findByIdAndDelete(messageId);
-      io.to(message.chat.toString()).emit("message_deleted", messageId);
+      await Message.findByIdAndDelete(messageId)
+      io.to(message.chat.toString()).emit("message_deleted", messageId)
     } catch (error) {
-      console.error("delete_message error:", error);
-      socket.emit("error", { message: "                         " });
+      console.error("delete_message error:", error)
+      socket.emit("error", { message: "                         " })
     }
-  });
+  })
 
   //                          (                                               )
   socket.on("edit_message", async (data) => {
     try {
-      const { messageId, newContent, isEncrypted } = data;
-      const message = await Message.findById(messageId);
+      const { messageId, newContent, isEncrypted } = data
+      const message = await Message.findById(messageId)
       if (!message) {
-        socket.emit("error", { message: "                    " });
-        return;
+        socket.emit("error", { message: "                    " })
+        return
       }
       //
       if (message.sender.toString() !== user.id) {
         socket.emit("error", {
           message: "                                        ",
-        });
-        return;
+        })
+        return
       }
-      message.content = newContent;
-      message.isEncrypted = !!isEncrypted;
-      message.isEdited = true;
-      await message.save();
+      message.content = newContent
+      message.isEncrypted = !!isEncrypted
+      message.isEdited = true
+      await message.save()
       //
       const msgObj = {
         ...message.toObject(),
@@ -2264,14 +2142,14 @@ io.on("connection", async (socket) => {
         chatId: message.chat?.toString() || message.chat,
         content: newContent,
         isEdited: true,
-      };
-      io.to(message.chat.toString()).emit("message_edited", msgObj);
+      }
+      io.to(message.chat.toString()).emit("message_edited", msgObj)
     } catch (error) {
-      console.error("edit_message error:", error);
-      socket.emit("error", { message: "                               " });
+      console.error("edit_message error:", error)
+      socket.emit("error", { message: "                               " })
     }
-  });
-});
+  })
+})
 
 // Функция очистки неактивных пользователей
 const cleanupInactiveUsers = async () => {
@@ -2288,13 +2166,11 @@ const cleanupInactiveUsers = async () => {
         })
         userHeartbeats.delete(userId)
         activeConnections.delete(userId)
-        console.log(
-          `🔌 Автоматическое отключение неактивного пользователя: ${userId}`
-        )
+        console.log(`🔌 Автоматическое отключение неактивного пользователя: ${userId}`)
       }
     }
     // Обновляем список активных пользователей
-    const activeUsers = await User.find({ isOnline: true }).lean();
+    const activeUsers = await User.find({ isOnline: true }).lean()
     io.emit(
       "users_update",
       activeUsers.map((u) => ({
@@ -2306,8 +2182,8 @@ const cleanupInactiveUsers = async () => {
         isOnline: u.isOnline,
         isVerified: u.isVerified,
         status: u.status,
-      }))
-    );
+      })),
+    )
   } catch (error) {
     console.error("cleanupInactiveUsers error:", error)
   }
@@ -2315,7 +2191,7 @@ const cleanupInactiveUsers = async () => {
 setInterval(cleanupInactiveUsers, 30000)
 
 // Запускаем очистку каждые 30 секунд
-setInterval(cleanupInactiveUsers, 30000);
+setInterval(cleanupInactiveUsers, 30000)
 
 // Автоочистка общего чата отключена - чат теперь постоянный
 // let lastGlobalChatCleanupDay = null;
@@ -2336,10 +2212,10 @@ setInterval(cleanupInactiveUsers, 30000);
 server.listen(PORT, async () => {
   // Очищаем глобальный чат при запуске
   try {
-    await Message.deleteMany({ chat: "global" });
-    console.log("🌍 Глобальный чат очищен при запуске сервера");
+    await Message.deleteMany({ chat: "global" })
+    console.log("🌍 Глобальный чат очищен при запуске сервера")
   } catch (error) {
-    console.error("Ошибка очистки глобального чата:", error);
+    console.error("Ошибка очистки глобального чата:", error)
   }
 
   console.log(`
@@ -2349,102 +2225,97 @@ server.listen(PORT, async () => {
               : JWT + Bcrypt + Rate Limiting + E2E Encryption
                :        ,            UI,               
          :                                   
-  `);
-});
+  `)
+})
 
 //                                      (              4:00     )
-let lastGlobalChatCleanupDay = null;
+let lastGlobalChatCleanupDay = null
 setInterval(async () => {
-  const now = new Date();
+  const now = new Date()
   //             (0)   4:00
   if (now.getDay() === 0 && now.getHours() === 4 && now.getMinutes() === 0) {
-    const today = now.toISOString().slice(0, 10);
+    const today = now.toISOString().slice(0, 10)
     if (lastGlobalChatCleanupDay !== today) {
-      await Message.deleteMany({ chat: "global" });
-      io.to("global").emit("chat_cleared", { chatId: "global" });
-      lastGlobalChatCleanupDay = today;
-      console.log("                                                 4:00     ");
+      await Message.deleteMany({ chat: "global" })
+      io.to("global").emit("chat_cleared", { chatId: "global" })
+      lastGlobalChatCleanupDay = today
+      console.log("                                                 4:00     ")
     }
   }
-}, 60 * 1000);
+}, 60 * 1000)
 
 // Graceful shutdown
 process.on("SIGTERM", () => {
-  console.log("SIGTERM получен, завершаем работу сервера...");
+  console.log("SIGTERM получен, завершаем работу сервера...")
   server.close(() => {
-    console.log("Сервер успешно завершил работу");
-    process.exit(0);
-  });
-});
+    console.log("Сервер успешно завершил работу")
+    process.exit(0)
+  })
+})
 
 process.on("SIGINT", () => {
-  console.log("SIGINT получен, завершаем работу сервера...");
+  console.log("SIGINT получен, завершаем работу сервера...")
   server.close(() => {
-    console.log("Сервер успешно завершил работу");
-    process.exit(0);
-  });
-});
+    console.log("Сервер успешно завершил работу")
+    process.exit(0)
+  })
+})
 
 // Подключение к MongoDB с обработкой ошибок
-let connectionAttempts = 0;
-const maxConnectionAttempts = 5;
+let connectionAttempts = 0
+const maxConnectionAttempts = 5
 
 const connectToMongoDB = async () => {
   try {
-    connectionAttempts++;
-    console.log(
-      `🔄 Попытка подключения к MongoDB (${connectionAttempts}/${maxConnectionAttempts})`
-    );
+    connectionAttempts++
+    console.log(`🔄 Попытка подключения к MongoDB (${connectionAttempts}/${maxConnectionAttempts})`)
     await mongoose.connect(
       "mongodb+srv://actogol:actogolsila@actogramuz.6ogftpx.mongodb.net/actogram?retryWrites=true&w=majority&appName=actogramUZ",
       {
         serverSelectionTimeoutMS: 10000,
         socketTimeoutMS: 45000,
-      }
-    );
-    console.log("✅ MongoDB подключен успешно");
-    connectionAttempts = 0; // Сброс счетчика при успешном подключении
-    await ensureGlobalChat(); // <-- Вызов здесь!
+      },
+    )
+    console.log("✅ MongoDB подключен успешно")
+    connectionAttempts = 0 // Сброс счетчика при успешном подключении
+    await ensureGlobalChat() // <-- Вызов здесь!
   } catch (err) {
-    console.error(
-      `❌ Ошибка подключения к MongoDB (попытка ${connectionAttempts}):`,
-      err.message
-    );
+    console.error(`❌ Ошибка подключения к MongoDB (попытка ${connectionAttempts}):`, err.message)
     if (connectionAttempts >= maxConnectionAttempts) {
-      console.error("🚫 Превышено максимальное количество попыток подключения");
-      console.log("💡 Проверьте настройки MongoDB Atlas:");
-      console.log("   1. IP адреса в Network Access");
-      console.log("   2. Правильность строки подключения");
-      console.log("   3. Статус кластера");
-      return;
+      console.error("🚫 Превышено максимальное количество попыток подключения")
+      console.log("💡 Проверьте настройки MongoDB Atlas:")
+      console.log("   1. IP адреса в Network Access")
+      console.log("   2. Правильность строки подключения")
+      console.log("   3. Статус кластера")
+      return
     }
-    console.log(`⏳ Повторная попытка через 5 секунд...`);
-    setTimeout(connectToMongoDB, 5000);
+    console.log(`⏳ Повторная попытка через 5 секунд...`)
+    setTimeout(connectToMongoDB, 5000)
   }
-};
+}
 
-connectToMongoDB();
+connectToMongoDB()
 
 // Обработка ошибок подключения
 mongoose.connection.on("error", (err) => {
-  console.error("❌ MongoDB connection error:", err.message);
-});
+  console.error("❌ MongoDB connection error:", err.message)
+})
 
 mongoose.connection.on("disconnected", () => {
-  console.log("🔌 MongoDB disconnected");
+  console.log("🔌 MongoDB disconnected")
   // Попробовать переподключиться
   if (connectionAttempts < maxConnectionAttempts) {
-    setTimeout(connectToMongoDB, 5000);
+    setTimeout(connectToMongoDB, 5000)
   }
-});
+})
 
 mongoose.connection.on("connected", () => {
-  console.log("✅ MongoDB connected");
-});
+  console.log("✅ MongoDB connected")
+})
 
 mongoose.connection.on("reconnected", () => {
-  console.log("🔄 MongoDB reconnected");
-});
+  console.log("🔄 MongoDB reconnected")
+})
 
 const UserSchema = new Schema({
   email: { type: String, unique: true },
@@ -2460,7 +2331,7 @@ const UserSchema = new Schema({
   status: String,
   isAdmin: { type: Boolean, default: false }, // <-- новое поле
   lastIp: String,
-});
+})
 
 const ChatSchema = new Schema({
   _id: { type: String, required: true },
@@ -2476,7 +2347,7 @@ const ChatSchema = new Schema({
   theme: String,
   isPinned: Boolean,
   isMuted: Boolean,
-});
+})
 
 const MessageSchema = new Schema({
   sender: { type: Schema.Types.ObjectId, ref: "User" },
@@ -2492,32 +2363,30 @@ const MessageSchema = new Schema({
   reactions: [{ emoji: String, userId: String, username: String }],
   readBy: [String],
   isEdited: Boolean,
-});
+})
 
-const User = model("User", UserSchema);
-const Chat = model("Chat", ChatSchema);
-const Message = model("Message", MessageSchema);
+const User = model("User", UserSchema)
+const Chat = model("Chat", ChatSchema)
+const Message = model("Message", MessageSchema)
 
 // Endpoint для отправки новости от бота во все чаты (только для админа)
 app.post("/api/bot-news", authenticateToken, async (req, res) => {
   try {
-    const { userId, username } = req.user;
+    const { username } = req.user
     if (username !== "@adminstator") {
-      return res
-        .status(403)
-        .json({ error: "Только админ может отправлять новости" });
+      return res.status(403).json({ error: "Только админ может отправлять новости" })
     }
-    const { text } = req.body;
+    const { text } = req.body
     if (!text || typeof text !== "string" || !text.trim()) {
-      return res.status(400).json({ error: "Текст новости обязателен" });
+      return res.status(400).json({ error: "Текст новости обязателен" })
     }
-    await ensureBotUser();
+    await ensureBotUser()
     // Найти все приватные чаты бота
     const botChats = await Chat.find({
       isGroup: false,
       type: "private",
       participants: botUserId,
-    });
+    })
     for (const chat of botChats) {
       await Message.create({
         sender: botUserId,
@@ -2528,7 +2397,7 @@ app.post("/api/bot-news", authenticateToken, async (req, res) => {
         isEncrypted: false,
         readBy: [botUserId],
         isEdited: false,
-      });
+      })
       // Отправить через Socket.IO
       io.to(chat._id.toString()).emit("new_message", {
         id: Date.now() + Math.random(),
@@ -2539,158 +2408,149 @@ app.post("/api/bot-news", authenticateToken, async (req, res) => {
         timestamp: new Date(),
         type: "text",
         isEncrypted: false,
-      });
+      })
     }
-    res.json({ success: true, count: botChats.length });
+    res.json({ success: true, count: botChats.length })
   } catch (error) {
-    console.error("bot-news error:", error);
-    res.status(500).json({ error: "Ошибка рассылки новости" });
+    console.error("bot-news error:", error)
+    res.status(500).json({ error: "Ошибка рассылки новости" })
   }
-});
+})
 
 // Endpoint для бана пользователя (только для админа)
 app.post("/api/ban-user", authenticateToken, async (req, res) => {
   try {
-    const { username } = req.user;
+    const { username } = req.user
     if (!req.user.isAdmin) {
-      return res.status(403).json({ error: "Только админ может банить" });
+      return res.status(403).json({ error: "Только админ может банить" })
     }
-    const { userId } = req.body;
-    if (!userId) return res.status(400).json({ error: "userId обязателен" });
-    await User.findByIdAndUpdate(userId, { status: "banned" });
+    const { userId } = req.body
+    if (!userId) return res.status(400).json({ error: "userId обязателен" })
+    await User.findByIdAndUpdate(userId, { status: "banned" })
     // Отключить пользователя, если он онлайн
     for (const [socketId, uid] of activeConnections.entries()) {
       if (uid === userId) {
-        const s = io.sockets.sockets.get(socketId);
-        if (s) s.disconnect(true);
+        const s = io.sockets.sockets.get(socketId)
+        if (s) s.disconnect(true)
       }
     }
-    res.json({ success: true });
+    res.json({ success: true })
   } catch (error) {
-    console.error("ban-user error:", error);
-    res.status(500).json({ error: "Ошибка бана пользователя" });
+    console.error("ban-user error:", error)
+    res.status(500).json({ error: "Ошибка бана пользователя" })
   }
-});
+})
 
 // Endpoint для очистки общего чата (для всех пользователей)
 app.post("/api/clear-global-chat", authenticateToken, async (req, res) => {
   try {
-    await Message.deleteMany({ chat: "global" });
-    io.to("global").emit("chat_cleared", { chatId: "global" });
+    await Message.deleteMany({ chat: "global" })
+    io.to("global").emit("chat_cleared", { chatId: "global" })
 
-    console.log("🌍 Общий чат полностью очищен");
-    res.json({ success: true, message: "Общий чат полностью очищен" });
+    console.log("🌍 Общий чат полностью очищен")
+    res.json({ success: true, message: "Общий чат полностью очищен" })
   } catch (error) {
-    console.error("clear-global-chat error:", error);
-    res.status(500).json({ error: "Ошибка очистки общего чата" });
+    console.error("clear-global-chat error:", error)
+    res.status(500).json({ error: "Ошибка очистки общего чата" })
   }
-});
+})
 
 // Endpoint для загрузки изображения в чат
-app.post(
-  "/api/upload-image",
-  authenticateToken,
-  upload.single("image"),
-  async (req, res) => {
-    try {
-      console.log("📷 Запрос на загрузку изображения (локально)");
-      console.log("📷 Файл:", req.file);
-      console.log("📷 Body:", req.body);
-      console.log("📷 User:", req.user);
+app.post("/api/upload-image", authenticateToken, upload.single("image"), async (req, res) => {
+  try {
+    console.log("📷 Запрос на загрузку изображения (локально)")
+    console.log("📷 Файл:", req.file)
+    console.log("📷 Body:", req.body)
+    console.log("📷 User:", req.user)
 
-      if (!req.file) {
-        res.setHeader("Content-Type", "application/json; charset=utf-8");
-        return res.status(400).json({ error: "                " });
-      }
-
-      const userId = req.user.userId;
-      const { chatId } = req.body;
-
-      console.log("📷 Данные:", { userId, chatId });
-
-      if (!chatId) {
-        res.setHeader("Content-Type", "application/json; charset=utf-8");
-        return res.status(400).json({ error: "chatId           " });
-      }
-
-      // Проверяем, что пользователь является участником чата
-      const chat = await Chat.findById(chatId);
-      if (!chat) {
-        res.setHeader("Content-Type", "application/json; charset=utf-8");
-        return res.status(404).json({ error: "             " });
-      }
-
-      const isGlobalChat = chatId === "global";
-      const isParticipant =
-        isGlobalChat ||
-        chat.participants.some((p) => p && p.toString() === userId);
-      if (!isParticipant) {
-        res.setHeader("Content-Type", "application/json; charset=utf-8");
-        return res.status(403).json({ error: "                        " });
-      }
-
-      const imageUrl = `/avatars/${req.file.filename}`;
-
-      // Создать сообщение с изображением
-      const message = await Message.create({
-        sender: userId,
-        chat: chatId,
-        content: `📷 Изображение`,
-        timestamp: new Date(),
-        type: "image",
-        fileUrl: imageUrl,
-        fileName: req.file.originalname,
-        fileSize: req.file.size,
-        isEncrypted: false,
-        reactions: [],
-        readBy: [userId],
-        isEdited: false,
-      });
-
-      // Получаем информацию о пользователе
-      const user = await User.findById(userId).lean();
-
-      const msgObj = {
-        ...message.toObject(),
-        id: message._id?.toString() || message._id,
-        senderId: userId,
-        senderName: user.username,
-        chatId: chatId,
-        content: `📷 Изображение`,
-        fileUrl: imageUrl,
-        fileName: req.file.originalname,
-        fileSize: req.file.size,
-      };
-
-      // Отправляем сообщение всем участникам чата
-      io.to(chatId).emit("new_message", msgObj);
-
-      res.json({
-        success: true,
-        message: msgObj,
-        imageUrl: imageUrl,
-      });
-
-      console.log(
-        `📷 Изображение загружено (локально): ${user.username} -> ${chatId}`
-      );
-    } catch (error) {
-      console.error("upload-image error:", error);
-      res.setHeader("Content-Type", "application/json; charset=utf-8");
-      res.status(500).json({ error: "                           " });
+    if (!req.file) {
+      res.setHeader("Content-Type", "application/json; charset=utf-8")
+      return res.status(400).json({ error: "                " })
     }
+
+    const userId = req.user.userId
+    const { chatId } = req.body
+
+    console.log("📷 Данные:", { userId, chatId })
+
+    if (!chatId) {
+      res.setHeader("Content-Type", "application/json; charset=utf-8")
+      return res.status(400).json({ error: "chatId           " })
+    }
+
+    // Проверяем, что пользователь является участником чата
+    const chat = await Chat.findById(chatId)
+    if (!chat) {
+      res.setHeader("Content-Type", "application/json; charset=utf-8")
+      return res.status(404).json({ error: "             " })
+    }
+
+    const isGlobalChat = chatId === "global"
+    const isParticipant = isGlobalChat || chat.participants.some((p) => p && p.toString() === userId)
+    if (!isParticipant) {
+      res.setHeader("Content-Type", "application/json; charset=utf-8")
+      return res.status(403).json({ error: "                        " })
+    }
+
+    const imageUrl = `/avatars/${req.file.filename}`
+
+    // Создать сообщение с изображением
+    const message = await Message.create({
+      sender: userId,
+      chat: chatId,
+      content: `📷 Изображение`,
+      timestamp: new Date(),
+      type: "image",
+      fileUrl: imageUrl,
+      fileName: req.file.originalname,
+      fileSize: req.file.size,
+      isEncrypted: false,
+      reactions: [],
+      readBy: [userId],
+      isEdited: false,
+    })
+
+    // Получаем информацию о пользователе
+    const user = await User.findById(userId).lean()
+
+    const msgObj = {
+      ...message.toObject(),
+      id: message._id?.toString() || message._id,
+      senderId: userId,
+      senderName: user.username,
+      chatId: chatId,
+      content: `📷 Изображение`,
+      fileUrl: imageUrl,
+      fileName: req.file.originalname,
+      fileSize: req.file.size,
+    }
+
+    // Отправляем сообщение всем участникам чата
+    io.to(chatId).emit("new_message", msgObj)
+
+    res.json({
+      success: true,
+      message: msgObj,
+      imageUrl: imageUrl,
+    })
+
+    console.log(`📷 Изображение загружено (локально): ${user.username} -> ${chatId}`)
+  } catch (error) {
+    console.error("upload-image error:", error)
+    res.setHeader("Content-Type", "application/json; charset=utf-8")
+    res.status(500).json({ error: "                           " })
   }
-);
+})
 
 // Обработка ошибок multer (например, превышен размер файла)
 app.use((err, req, res, next) => {
   if (err instanceof multer.MulterError) {
-    if (err.code === 'LIMIT_FILE_SIZE') {
-      return res.status(400).json({ error: 'Файл слишком большой. Максимальный размер — 10 МБ.' })
+    if (err.code === "LIMIT_FILE_SIZE") {
+      return res.status(400).json({ error: "Файл слишком большой. Максимальный размер — 10 МБ." })
     }
-    return res.status(400).json({ error: 'Ошибка загрузки файла: ' + err.message })
+    return res.status(400).json({ error: "Ошибка загрузки файла: " + err.message })
   } else if (err) {
-    return res.status(500).json({ error: 'Ошибка сервера: ' + err.message })
+    return res.status(500).json({ error: "Ошибка сервера: " + err.message })
   }
   next()
 })
