@@ -1747,7 +1747,7 @@ io.on("connection", async (socket) => {
       })
         .limit(10)
         .lean()
-      const results = usersFound.map((u) => ({
+const results = usersFound.map((u) => ({
         id: u._id.toString(),
         username: u.username,
         fullName: u.fullName,
@@ -1756,13 +1756,13 @@ io.on("connection", async (socket) => {
         isOnline: u.isOnline,
         isVerified: u.isVerified,
         status: u.status,
-      })),
-    )
-  } catch (error) {
-    console.error("cleanupInactiveUsers error:", error)
-  }
-}
-
+      }))
+      socket.emit("search_results", results)
+    } catch (error) {
+      console.error("search_users error:", error)
+      socket.emit("search_results", [])
+    }
+  })
 setInterval(cleanupInactiveUsers, 30000)
 
 // Автоочистка глобального чата каждое воскресенье в 4:00
