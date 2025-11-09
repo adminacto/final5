@@ -611,11 +611,13 @@ app.get("/admin", (req, res) => {
 
         <div id="loginCard" class="card">
           <h3>Вход администратора</h3>
+          <form id="loginForm" onsubmit="event.preventDefault(); document.getElementById('loginBtn').click();">
           <div class="row" style="margin-top: 8px;">
-            <input id="username" placeholder="Логин" value="Mumtozbekk" />
-            <input id="password" type="password" placeholder="Пароль" />
-            <button id="loginBtn">Войти</button>
+              <input id="username" placeholder="Логин" value="Mumtozbekk" required />
+              <input id="password" type="password" placeholder="Пароль" required />
+              <button type="submit" id="loginBtn">Войти</button>
           </div>
+          </form>
           <div id="loginMsg" class="muted" style="margin-top: 8px;"></div>
         </div>
 
@@ -819,44 +821,26 @@ app.get("/admin", (req, res) => {
           loop();
         })();
 
+        function initAdminPanel() {
         const loginCard = document.getElementById('loginCard');
         const adminCard = document.getElementById('adminCard');
         const loginMsg = document.getElementById('loginMsg');
         const actionMsg = document.getElementById('actionMsg');
         const bansBody = document.getElementById('bansBody');
         const usersBody = document.getElementById('usersBody');
+          
+          if(!loginCard || !adminCard) {
+            console.error('Admin panel elements not found!');
+            return;
+          }
 
         function getToken(){ return localStorage.getItem('admin_token') || ''; }
         function setToken(t){ if(t) localStorage.setItem('admin_token', t); }
         function clearToken(){ localStorage.removeItem('admin_token'); }
-        function setState(logged){
-          if(logged){ 
-            loginCard.classList.add('hidden'); 
-            adminCard.classList.remove('hidden'); 
-            loadBans(); 
-            loadUsers(); 
-          } else { 
-            adminCard.classList.add('hidden'); 
-            loginCard.classList.remove('hidden'); 
-          }
-        }
-
-        document.getElementById('loginBtn').onclick = async () => {
-          loginMsg.textContent = '';
-          const username = document.getElementById('username').value.trim();
-          const password = document.getElementById('password').value;
-          try{
-            const res = await fetch('/admin/login', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({username, password})});
-            const data = await res.json();
-            if(!res.ok){ loginMsg.textContent = (data && data.error) || 'Ошибка входа'; loginMsg.className='err'; return; }
-            setToken(data.token); loginMsg.textContent='Вход выполнен'; loginMsg.className='ok'; setState(true);
-          }catch(e){ loginMsg.textContent = 'Сеть недоступна'; loginMsg.className='err'; }
-        };
-
-        document.getElementById('logoutBtn').onclick = () => { clearToken(); setState(false); };
-
-        // Загрузка банов
+          
+          // Загрузка банов
         async function loadBans(){
+            if(!actionMsg || !bansBody) return;
           actionMsg.textContent='';
           try{
             const res = await fetch('/admin/bans', { headers: { 'Authorization': 'Bearer ' + getToken() }});
@@ -865,146 +849,232 @@ app.get("/admin", (req, res) => {
             bansBody.innerHTML = '';
             (data.items||[]).forEach(item => {
               const tr = document.createElement('tr');
-              tr.innerHTML = '<td style="padding: 8px;">' + (item.ip || '') + '</td>'
-                + '<td style="padding: 8px;">' + (item.reason || '-') + '</td>'
-                + '<td style="padding: 8px;">' + new Date(item.bannedAt).toLocaleString('ru-RU') + '</td>'
-                + '<td style="padding: 8px;">' + (item.bannedBy || '') + '</td>'
-                + '<td style="padding: 8px;"><button onclick="unbanIPFromTable(\'' + item.ip + '\')" style="background:#ef4444; padding: 4px 8px; font-size: 11px; border: none; border-radius: 4px; cursor: pointer;">Разбанить</button></td>';
+                tr.innerHTML = '<td style="padding: 8px;">' + (item.ip || '') + '</td>'
+                  + '<td style="padding: 8px;">' + (item.reason || '-') + '</td>'
+                  + '<td style="padding: 8px;">' + new Date(item.bannedAt).toLocaleString('ru-RU') + '</td>'
+                  + '<td style="padding: 8px;">' + (item.bannedBy || '') + '</td>'
+                  + '<td style="padding: 8px;"><button onclick="window.unbanIPFromTable(\'' + item.ip + '\')" style="background:#ef4444; padding: 4px 8px; font-size: 11px; border: none; border-radius: 4px; cursor: pointer;">Разбанить</button></td>';
               bansBody.appendChild(tr);
             });
-          }catch(e){ actionMsg.textContent='Сеть недоступна'; actionMsg.className='err'; }
-        }
+            }catch(e){ 
+              if(actionMsg) {
+                actionMsg.textContent='Сеть недоступна'; 
+                actionMsg.className='err'; 
+              }
+            }
+          }
 
-        window.unbanIPFromTable = async (ip) => {
-          if(!confirm('Разбанить IP ' + ip + '?')) return;
-          document.getElementById('ipInput').value = ip;
-          document.getElementById('unbanBtn').click();
-        };
-
-        document.getElementById('refreshBansBtn').onclick = () => { loadBans(); };
-        
-        // Загрузка пользователей с поиском и фильтрами
-        let currentSearch = '';
-        let currentFilter = '';
-        let currentSort = 'lastSeen-desc';
+          // Загрузка пользователей
+          let currentSearch = '';
+          let currentFilter = '';
+          let currentSort = 'lastSeen-desc';
         
         async function loadUsers(){
-          try{
-            const search = document.getElementById('searchInput').value.trim();
-            const filter = document.getElementById('filterSelect').value;
-            const sort = document.getElementById('sortSelect').value;
-            const [sortBy, sortOrder] = sort.split('-');
-            
-            const params = new URLSearchParams();
-            if(search) params.append('search', search);
-            if(filter) params.append('filter', filter);
-            params.append('sortBy', sortBy);
-            params.append('sortOrder', sortOrder);
-            
-            const res = await fetch('/admin/users?' + params.toString(), { 
-              headers: { 'Authorization': 'Bearer ' + getToken() } 
-            });
-            const data = await res.json();
-            if(!res.ok){ return; }
-            
-            // Обновляем статистику
-            if(data.stats){
-              document.getElementById('statTotal').textContent = data.stats.total || 0;
-              document.getElementById('statOnline').textContent = data.stats.online || 0;
-              document.getElementById('statBanned').textContent = data.stats.banned || 0;
-              document.getElementById('statVerified').textContent = data.stats.verified || 0;
-            }
-            
-            usersBody.innerHTML = '';
-            const users = data.items || [];
-            document.getElementById('usersCount').textContent = 'Найдено пользователей: ' + users.length;
-            
-            users.forEach(u => {
-              const tr = document.createElement('tr');
-              tr.style.borderBottom = '1px solid #1f2937';
-              tr.style.cursor = 'pointer';
-              tr.onmouseenter = () => tr.style.background = '#1f2937';
-              tr.onmouseleave = () => tr.style.background = '';
+            if(!usersBody) return;
+            try{
+              const searchInput = document.getElementById('searchInput');
+              const filterSelect = document.getElementById('filterSelect');
+              const sortSelect = document.getElementById('sortSelect');
+              const search = searchInput ? searchInput.value.trim() : '';
+              const filter = filterSelect ? filterSelect.value : '';
+              const sort = sortSelect ? sortSelect.value : 'lastSeen-desc';
+              const [sortBy, sortOrder] = sort.split('-');
               
-              const statusIcon = u.status === 'banned' ? '🚫' : (u.isOnline ? '🟢' : '⚪');
-              const statusText = u.status === 'banned' ? 'Забанен' : (u.isOnline ? 'Онлайн' : 'Оффлайн');
-              const verifiedBadge = u.isVerified ? ' <span style="color: #fbbf24;">✓</span>' : '';
-              const lastSeen = u.lastSeen ? new Date(u.lastSeen).toLocaleString('ru-RU') : 'Никогда';
-              const createdAt = u.createdAt ? new Date(u.createdAt).toLocaleString('ru-RU') : '';
+              const params = new URLSearchParams();
+              if(search) params.append('search', search);
+              if(filter) params.append('filter', filter);
+              params.append('sortBy', sortBy);
+              params.append('sortOrder', sortOrder);
               
-              tr.innerHTML = '<td style="padding: 10px;"><strong>' + (u.username||'') + '</strong>' + verifiedBadge + '<br><span style="color: #94a3b8; font-size: 11px;">' + (u.fullName||'') + '</span></td>'
-                + '<td style="padding: 10px; font-size: 12px;">' + (u.email||'-') + '</td>'
-                + '<td style="padding: 10px;"><a href="#" data-ip="' + (u.lastIp||'') + '" class="pick-ip" style="color: #60a5fa; text-decoration: none;">' + (u.lastIp||'-') + '</a></td>'
-                + '<td style="padding: 10px; text-align: center;"><span style="font-size: 16px;">' + statusIcon + '</span><br><span style="font-size: 11px; color: #94a3b8;">' + statusText + '</span></td>'
-                + '<td style="padding: 10px; text-align: center; font-size: 11px; color: #94a3b8;">' + lastSeen + '</td>'
-                + '<td style="padding: 10px; text-align: center;"><button onclick="showUserDetails(\'' + u.id + '\')" style="background:#3b82f6; padding: 4px 8px; font-size: 11px; border: none; border-radius: 4px; cursor: pointer; margin: 2px;">Детали</button>' 
-                + (u.status === 'banned' 
-                  ? '<button onclick="unbanUser(\'' + u.id + '\', \'' + (u.username||'') + '\')" style="background:#10b981; padding: 4px 8px; font-size: 11px; border: none; border-radius: 4px; cursor: pointer; margin: 2px;">Разбанить</button>'
-                  : '<button onclick="banUser(\'' + u.id + '\', \'' + (u.username||'') + '\')" style="background:#ef4444; padding: 4px 8px; font-size: 11px; border: none; border-radius: 4px; cursor: pointer; margin: 2px;">Забанить</button>') + '</td>';
-              tr.setAttribute('data-user-id', u.id);
-              tr.onclick = () => showUserDetails(u.id);
-              usersBody.appendChild(tr);
-            });
-            
-            usersBody.querySelectorAll('a.pick-ip').forEach(a => {
-              a.addEventListener('click', (e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                const ip = a.getAttribute('data-ip');
-                if(ip && ip !== '-'){ 
-                  document.getElementById('ipInput').value = ip;
-                  document.getElementById('ipInput').scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }
-              });
-            });
-            
-            currentSearch = search;
-            currentFilter = filter;
-            currentSort = sort;
-          }catch(e){
-            console.error('Load users error:', e);
-          }
-        }
-
-        // Показать детали пользователя
-        window.showUserDetails = async (userId) => {
-          try{
-            // Получаем всех пользователей и ищем по ID
-            const res = await fetch('/admin/users', { 
-              headers: { 'Authorization': 'Bearer ' + getToken() } 
-            });
-            const data = await res.json();
-            const user = data.items && data.items.find(u => u.id === userId);
-            if(!user) {
-              // Если не нашли в текущем списке, ищем по ID напрямую
-              const res2 = await fetch('/admin/users?search=' + userId.substring(0, 8), { 
+              const res = await fetch('/admin/users?' + params.toString(), { 
                 headers: { 'Authorization': 'Bearer ' + getToken() } 
               });
-              const data2 = await res2.json();
-              const user2 = data2.items && data2.items.find(u => u.id === userId);
-              if(!user2) {
-                alert('Пользователь не найден');
-                return;
+            const data = await res.json();
+            if(!res.ok){ return; }
+              
+              // Обновляем статистику
+              if(data.stats){
+                const statTotal = document.getElementById('statTotal');
+                const statOnline = document.getElementById('statOnline');
+                const statBanned = document.getElementById('statBanned');
+                const statVerified = document.getElementById('statVerified');
+                if(statTotal) statTotal.textContent = data.stats.total || 0;
+                if(statOnline) statOnline.textContent = data.stats.online || 0;
+                if(statBanned) statBanned.textContent = data.stats.banned || 0;
+                if(statVerified) statVerified.textContent = data.stats.verified || 0;
               }
-              showUserModal(user2);
+              
+            usersBody.innerHTML = '';
+              const users = data.items || [];
+              const usersCount = document.getElementById('usersCount');
+              if(usersCount) usersCount.textContent = 'Найдено пользователей: ' + users.length;
+              
+              users.forEach(u => {
+              const tr = document.createElement('tr');
+                tr.style.borderBottom = '1px solid #1f2937';
+                tr.style.cursor = 'pointer';
+                tr.onmouseenter = () => tr.style.background = '#1f2937';
+                tr.onmouseleave = () => tr.style.background = '';
+                
+                const statusIcon = u.status === 'banned' ? '🚫' : (u.isOnline ? '🟢' : '⚪');
+                const statusText = u.status === 'banned' ? 'Забанен' : (u.isOnline ? 'Онлайн' : 'Оффлайн');
+                const verifiedBadge = u.isVerified ? ' <span style="color: #fbbf24;">✓</span>' : '';
+                const lastSeen = u.lastSeen ? new Date(u.lastSeen).toLocaleString('ru-RU') : 'Никогда';
+                const safeUsername = (u.username||'').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                
+                tr.innerHTML = '<td style="padding: 10px;"><strong>' + (u.username||'') + '</strong>' + verifiedBadge + '<br><span style="color: #94a3b8; font-size: 11px;">' + (u.fullName||'') + '</span></td>'
+                  + '<td style="padding: 10px; font-size: 12px;">' + (u.email||'-') + '</td>'
+                  + '<td style="padding: 10px;"><a href="#" data-ip="' + (u.lastIp||'') + '" class="pick-ip" style="color: #60a5fa; text-decoration: none;">' + (u.lastIp||'-') + '</a></td>'
+                  + '<td style="padding: 10px; text-align: center;"><span style="font-size: 16px;">' + statusIcon + '</span><br><span style="font-size: 11px; color: #94a3b8;">' + statusText + '</span></td>'
+                  + '<td style="padding: 10px; text-align: center; font-size: 11px; color: #94a3b8;">' + lastSeen + '</td>'
+                  + '<td style="padding: 10px; text-align: center;"><button onclick="window.showUserDetails(\'' + u.id + '\')" style="background:#3b82f6; padding: 4px 8px; font-size: 11px; border: none; border-radius: 4px; cursor: pointer; margin: 2px;">Детали</button>' 
+                  + (u.status === 'banned' 
+                    ? '<button onclick="window.unbanUser(\'' + u.id + '\', \'' + safeUsername + '\')" style="background:#10b981; padding: 4px 8px; font-size: 11px; border: none; border-radius: 4px; cursor: pointer; margin: 2px;">Разбанить</button>'
+                    : '<button onclick="window.banUser(\'' + u.id + '\', \'' + safeUsername + '\')" style="background:#ef4444; padding: 4px 8px; font-size: 11px; border: none; border-radius: 4px; cursor: pointer; margin: 2px;">Забанить</button>') + '</td>';
+                tr.setAttribute('data-user-id', u.id);
+                tr.onclick = () => window.showUserDetails(u.id);
+              usersBody.appendChild(tr);
+            });
+              
+            usersBody.querySelectorAll('a.pick-ip').forEach(a => {
+              a.addEventListener('click', (e) => {
+                  e.stopPropagation();
+                e.preventDefault();
+                const ip = a.getAttribute('data-ip');
+                  if(ip && ip !== '-'){ 
+                    const ipInput = document.getElementById('ipInput');
+                    if(ipInput) {
+                      ipInput.value = ip;
+                      ipInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                  }
+              });
+            });
+              
+              currentSearch = search;
+              currentFilter = filter;
+              currentSort = sort;
+            }catch(e){
+              console.error('Load users error:', e);
+            }
+          }
+
+          function setState(logged){
+            if(logged){ 
+              loginCard.classList.add('hidden'); 
+              adminCard.classList.remove('hidden'); 
+              loadBans(); 
+              loadUsers(); 
+            } else { 
+              adminCard.classList.add('hidden'); 
+              loginCard.classList.remove('hidden'); 
+            }
+          }
+
+          // Функция входа
+          async function performLogin() {
+            if(!loginMsg) return;
+            loginMsg.textContent = 'Подключение...';
+            loginMsg.className = 'muted';
+            const usernameInput = document.getElementById('username');
+            const passwordInput = document.getElementById('password');
+            if(!usernameInput || !passwordInput) {
+              loginMsg.textContent = 'Элементы формы не найдены';
+              loginMsg.className = 'err';
               return;
             }
-            showUserModal(user);
-          }catch(e){
-            console.error('Show user details error:', e);
-            alert('Ошибка загрузки данных пользователя');
+            const username = usernameInput.value.trim();
+            const password = passwordInput.value;
+            if(!username || !password) {
+              loginMsg.textContent = 'Заполните все поля';
+              loginMsg.className = 'err';
+              return;
+            }
+            try{
+              const res = await fetch('/admin/login', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'}, 
+                body: JSON.stringify({username, password})
+              });
+              const data = await res.json();
+              if(!res.ok){ 
+                loginMsg.textContent = (data && data.error) || 'Ошибка входа'; 
+                loginMsg.className='err';
+                return; 
+              }
+              setToken(data.token); 
+              loginMsg.textContent='Вход выполнен'; 
+              loginMsg.className='ok';
+              setTimeout(() => {
+                setState(true);
+              }, 500);
+            }catch(e){
+              console.error('Login error:', e);
+              loginMsg.textContent = 'Ошибка сети: ' + (e.message || 'Неизвестная ошибка'); 
+              loginMsg.className='err';
+            }
           }
-        };
 
-        function showUserModal(user) {
+          // Обработчик входа
+          const loginBtn = document.getElementById('loginBtn');
+          if(loginBtn) {
+            loginBtn.addEventListener('click', async (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              await performLogin();
+            });
+          } else {
+            console.error('Login button not found!');
+          }
+
+          // Обработчик формы входа
+          const loginForm = document.getElementById('loginForm');
+          if(loginForm) {
+            loginForm.addEventListener('submit', async (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              await performLogin();
+            });
+          }
+
+          // Обработчик нажатия Enter в полях ввода
+          const usernameInput = document.getElementById('username');
+          const passwordInput = document.getElementById('password');
+          if(usernameInput) {
+            usernameInput.addEventListener('keypress', (e) => {
+              if(e.key === 'Enter') {
+                e.preventDefault();
+                performLogin();
+              }
+            });
+          }
+          if(passwordInput) {
+            passwordInput.addEventListener('keypress', (e) => {
+              if(e.key === 'Enter') {
+                e.preventDefault();
+                performLogin();
+              }
+            });
+          }
+
+          const logoutBtn = document.getElementById('logoutBtn');
+          if(logoutBtn) {
+            logoutBtn.onclick = () => { clearToken(); setState(false); };
+          }
+          
+          // Функция показа модального окна с деталями пользователя
+          function showUserModal(user) {
             const modal = document.getElementById('userModal');
             const content = document.getElementById('userModalContent');
+            if(!modal || !content) return;
             
             const statusIcon = user.status === 'banned' ? '🚫' : (user.isOnline ? '🟢' : '⚪');
             const statusText = user.status === 'banned' ? 'Забанен' : (user.isOnline ? 'Онлайн' : 'Оффлайн');
             const lastSeen = user.lastSeen ? new Date(user.lastSeen).toLocaleString('ru-RU') : 'Никогда';
             const createdAt = user.createdAt ? new Date(user.createdAt).toLocaleString('ru-RU') : '';
             const userAvatar = user.avatar ? '<img src="' + user.avatar + '" style="width: 64px; height: 64px; border-radius: 50%; margin-bottom: 12px;" />' : '<div style="width: 64px; height: 64px; border-radius: 50%; background: #374151; display: flex; align-items: center; justify-content: center; font-size: 24px; margin-bottom: 12px;">' + (user.username ? user.username.charAt(0).toUpperCase() : '?') + '</div>';
+            const safeUsername = (user.username||'').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+            const safeLastIp = (user.lastIp||'').replace(/'/g, "\\'");
             
             content.innerHTML = '<div style="line-height: 1.8;">'
               + '<div style="text-align: center; margin-bottom: 20px;">' + userAvatar + '</div>'
@@ -1014,134 +1084,280 @@ app.get("/admin", (req, res) => {
               + '<strong>Email:</strong> ' + (user.email||'-') + '<br>'
               + '<strong>Bio:</strong> ' + (user.bio||'-') + '<br>'
               + '<strong>Статус:</strong> ' + statusIcon + ' ' + statusText + '<br>'
-              + '<strong>Последний IP:</strong> <a href="#" onclick="document.getElementById(\'ipInput\').value=\'' + (user.lastIp||'') + '\'; closeUserModal(); return false;" style="color: #60a5fa;">' + (user.lastIp||'-') + '</a><br>'
+              + '<strong>Последний IP:</strong> <a href="#" onclick="window.setIPAndCloseModal(\'' + safeLastIp + '\'); return false;" style="color: #60a5fa;">' + (user.lastIp||'-') + '</a><br>'
               + '<strong>Последняя активность:</strong> ' + lastSeen + '<br>'
               + '<strong>Дата регистрации:</strong> ' + createdAt + '<br><br>'
               + '<div style="display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap;">'
               + (user.status === 'banned' 
-                ? '<button onclick="unbanUser(\'' + user.id + '\', \'' + (user.username||'').replace(/'/g, "\\'") + '\'); closeUserModal();" style="background:#10b981; padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; flex: 1; min-width: 150px;">✅ Разбанить</button>'
-                : '<button onclick="banUser(\'' + user.id + '\', \'' + (user.username||'').replace(/'/g, "\\'") + '\'); closeUserModal();" style="background:#ef4444; padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; flex: 1; min-width: 150px;">🚫 Забанить</button>')
+                ? '<button onclick="window.unbanUser(\'' + user.id + '\', \'' + safeUsername + '\'); window.closeUserModal();" style="background:#10b981; padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; flex: 1; min-width: 150px;">✅ Разбанить</button>'
+                : '<button onclick="window.banUser(\'' + user.id + '\', \'' + safeUsername + '\'); window.closeUserModal();" style="background:#ef4444; padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; flex: 1; min-width: 150px;">🚫 Забанить</button>')
               + (user.lastIp && user.lastIp !== '-' 
-                ? '<button onclick="banUserIP(\'' + (user.lastIp||'') + '\'); closeUserModal();" style="background:#f59e0b; padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; flex: 1; min-width: 150px;">🛡️ Забанить IP</button>'
+                ? '<button onclick="window.banUserIP(\'' + safeLastIp + '\'); window.closeUserModal();" style="background:#f59e0b; padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; flex: 1; min-width: 150px;">🛡️ Забанить IP</button>'
                 : '')
               + '</div></div>';
             
             modal.style.display = 'flex';
             modal.classList.remove('hidden');
-        }
+          }
 
-        window.closeUserModal = () => {
-          const modal = document.getElementById('userModal');
-          modal.style.display = 'none';
-          modal.classList.add('hidden');
-        };
+          // Показать детали пользователя
+          async function showUserDetails(userId) {
+            try{
+              const res = await fetch('/admin/users?search=' + userId, { 
+                headers: { 'Authorization': 'Bearer ' + getToken() } 
+              });
+              const data = await res.json();
+              const user = data.items && data.items.find(u => u.id === userId);
+              if(!user) {
+                alert('Пользователь не найден');
+                return;
+              }
+              showUserModal(user);
+            }catch(e){
+              console.error('Show user details error:', e);
+              alert('Ошибка загрузки данных пользователя');
+            }
+          }
 
-        document.getElementById('closeModal').onclick = closeUserModal;
-        document.getElementById('userModal').onclick = (e) => {
-          if(e.target.id === 'userModal') closeUserModal();
-        };
+          // Бан пользователя
+          async function banUser(userId, username) {
+            if(!confirm('Забанить пользователя ' + username + '?')) return;
+            try{
+              const res = await fetch('/admin/ban-user', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + getToken() },
+                body: JSON.stringify({ userId })
+              });
+              const data = await res.json();
+              if(!res.ok){
+                alert('Ошибка: ' + (data.error || 'Неизвестная ошибка'));
+                return;
+              }
+              alert('Пользователь ' + username + ' забанен');
+              loadUsers();
+              loadBans();
+            }catch(e){
+              alert('Ошибка сети');
+            }
+          }
 
-        // Бан пользователя
-        window.banUser = async (userId, username) => {
-          if(!confirm('Забанить пользователя ' + username + '?')) return;
-          try{
-            const res = await fetch('/admin/ban-user', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + getToken() },
-              body: JSON.stringify({ userId })
-            });
-            const data = await res.json();
-            if(!res.ok){
-              alert('Ошибка: ' + (data.error || 'Неизвестная ошибка'));
+          // Разбан пользователя
+          async function unbanUser(userId, username) {
+            if(!confirm('Разбанить пользователя ' + username + '?')) return;
+            try{
+              const res = await fetch('/admin/unban-user', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + getToken() },
+                body: JSON.stringify({ userId })
+              });
+              const data = await res.json();
+              if(!res.ok){
+                alert('Ошибка: ' + (data.error || 'Неизвестная ошибка'));
+                return;
+              }
+              alert('Пользователь ' + username + ' разбанен');
+              loadUsers();
+              loadBans();
+            }catch(e){
+              alert('Ошибка сети');
+            }
+          }
+
+          // Бан IP пользователя
+          function banUserIP(ip) {
+            if(!ip || ip === '-') {
+              alert('IP адрес не найден');
               return;
             }
-            alert('Пользователь ' + username + ' забанен');
-            loadUsers();
-          }catch(e){
-            alert('Ошибка сети');
-          }
-        };
-
-        // Разбан пользователя
-        window.unbanUser = async (userId, username) => {
-          if(!confirm('Разбанить пользователя ' + username + '?')) return;
-          try{
-            const res = await fetch('/admin/unban-user', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + getToken() },
-              body: JSON.stringify({ userId })
-            });
-            const data = await res.json();
-            if(!res.ok){
-              alert('Ошибка: ' + (data.error || 'Неизвестная ошибка'));
-              return;
+            const ipInput = document.getElementById('ipInput');
+            if(ipInput) {
+              ipInput.value = ip;
+              const reason = prompt('Причина бана IP ' + ip + ':');
+              if(reason !== null){
+                const reasonInput = document.getElementById('reasonInput');
+                if(reasonInput) reasonInput.value = reason;
+                const banBtn = document.getElementById('banBtn');
+                if(banBtn) banBtn.click();
+              }
             }
-            alert('Пользователь ' + username + ' разбанен');
-            loadUsers();
-          }catch(e){
-            alert('Ошибка сети');
           }
-        };
 
-        // Бан IP пользователя
-        window.banUserIP = (ip) => {
-          if(!ip || ip === '-') {
-            alert('IP адрес не найден');
-            return;
+          // Разбан IP из таблицы
+          async function unbanIPFromTable(ip) {
+            if(!confirm('Разбанить IP ' + ip + '?')) return;
+            const ipInput = document.getElementById('ipInput');
+            if(ipInput) ipInput.value = ip;
+            const unbanBtn = document.getElementById('unbanBtn');
+            if(unbanBtn) unbanBtn.click();
           }
-          document.getElementById('ipInput').value = ip;
-          const reason = prompt('Причина бана IP ' + ip + ':');
-          if(reason !== null){
-            document.getElementById('reasonInput').value = reason;
-            document.getElementById('banBtn').click();
+
+          // Закрыть модальное окно
+          function closeUserModal() {
+            const modal = document.getElementById('userModal');
+            if(modal) {
+              modal.style.display = 'none';
+              modal.classList.add('hidden');
+            }
           }
-        };
 
-        // Поиск и фильтры
-        document.getElementById('searchInput').addEventListener('input', debounce(loadUsers, 500));
-        document.getElementById('filterSelect').addEventListener('change', loadUsers);
-        document.getElementById('sortSelect').addEventListener('change', loadUsers);
-        document.getElementById('refreshUsersBtn').onclick = loadUsers;
+          // Установить IP и закрыть модальное окно
+          function setIPAndCloseModal(ip) {
+            const ipInput = document.getElementById('ipInput');
+            if(ipInput && ip && ip !== '-') {
+              ipInput.value = ip;
+              ipInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+            closeUserModal();
+          }
 
-        function debounce(func, wait){
-          let timeout;
-          return function executedFunction(...args){
-            const later = () => { clearTimeout(timeout); func(...args); };
-            clearTimeout(timeout);
-            timeout = setTimeout(later, wait);
-          };
+          // Debounce функция
+          function debounce(func, wait){
+            let timeout;
+            return function executedFunction(...args){
+              const later = () => { clearTimeout(timeout); func(...args); };
+              clearTimeout(timeout);
+              timeout = setTimeout(later, wait);
+            };
+          }
+
+          // Экспортируем функции в window для использования в onclick
+          window.getAdminToken = getToken;
+          window.loadAdminUsers = loadUsers;
+          window.loadAdminBans = loadBans;
+          window.showUserDetails = showUserDetails;
+          window.banUser = banUser;
+          window.unbanUser = unbanUser;
+          window.banUserIP = banUserIP;
+          window.unbanIPFromTable = unbanIPFromTable;
+          window.closeUserModal = closeUserModal;
+          window.setIPAndCloseModal = setIPAndCloseModal;
+
+          // Обработчики для кнопок IP
+          const banBtn = document.getElementById('banBtn');
+          if(banBtn) {
+            banBtn.onclick = async () => {
+              if(!actionMsg) return;
+          actionMsg.textContent='';
+              const ipInput = document.getElementById('ipInput');
+              const reasonInput = document.getElementById('reasonInput');
+              if(!ipInput) return;
+              const ip = ipInput.value.trim();
+              const reason = reasonInput ? reasonInput.value.trim() : '';
+              if(!ip){ 
+                actionMsg.textContent='Укажите IP'; 
+                actionMsg.className='err'; 
+                return; 
+              }
+              try{
+                const res = await fetch('/admin/ban-ip', { 
+                  method:'POST', 
+                  headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + getToken() }, 
+                  body: JSON.stringify({ ip, reason }) 
+                });
+            const data = await res.json();
+                if(!res.ok){ 
+                  actionMsg.textContent = (data && data.error) || 'Ошибка бана'; 
+                  actionMsg.className='err'; 
+                  return; 
+                }
+                actionMsg.textContent='IP забанен'; 
+                actionMsg.className='ok'; 
+                loadBans();
+                loadUsers();
+              }catch(e){ 
+                actionMsg.textContent='Сеть недоступна'; 
+                actionMsg.className='err'; 
+              }
+            };
+          }
+
+          const unbanBtn = document.getElementById('unbanBtn');
+          if(unbanBtn) {
+            unbanBtn.onclick = async () => {
+              if(!actionMsg) return;
+          actionMsg.textContent='';
+              const ipInput = document.getElementById('ipInput');
+              if(!ipInput) return;
+              const ip = ipInput.value.trim();
+              if(!ip){ 
+                actionMsg.textContent='Укажите IP'; 
+                actionMsg.className='err'; 
+                return; 
+              }
+              try{
+                const res = await fetch('/admin/unban-ip', { 
+                  method:'POST', 
+                  headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + getToken() }, 
+                  body: JSON.stringify({ ip }) 
+                });
+            const data = await res.json();
+                if(!res.ok){ 
+                  actionMsg.textContent = (data && data.error) || 'Ошибка разбана'; 
+                  actionMsg.className='err'; 
+                  return; 
+                }
+                actionMsg.textContent='IP разбанен'; 
+                actionMsg.className='ok'; 
+                loadBans();
+                loadUsers();
+              }catch(e){ 
+                actionMsg.textContent='Сеть недоступна'; 
+                actionMsg.className='err'; 
+              }
+            };
+          }
+
+          // Обработчики для кнопок обновления
+          const refreshBansBtn = document.getElementById('refreshBansBtn');
+          if(refreshBansBtn) {
+            refreshBansBtn.onclick = () => { loadBans(); };
+          }
+
+          const refreshUsersBtn = document.getElementById('refreshUsersBtn');
+          if(refreshUsersBtn) {
+            refreshUsersBtn.onclick = () => { loadUsers(); };
+          }
+
+          // Обработчики для поиска и фильтров
+          const searchInput = document.getElementById('searchInput');
+          if(searchInput) {
+            searchInput.addEventListener('input', debounce(loadUsers, 500));
+          }
+
+          const filterSelect = document.getElementById('filterSelect');
+          if(filterSelect) {
+            filterSelect.addEventListener('change', loadUsers);
+          }
+
+          const sortSelect = document.getElementById('sortSelect');
+          if(sortSelect) {
+            sortSelect.addEventListener('change', loadUsers);
+          }
+
+          // Обработчики для модального окна
+          const closeModalBtn = document.getElementById('closeModal');
+          if(closeModalBtn) {
+            closeModalBtn.onclick = closeUserModal;
+          }
+
+          const userModal = document.getElementById('userModal');
+          if(userModal) {
+            userModal.onclick = (e) => {
+              if(e.target.id === 'userModal') closeUserModal();
+            };
+          }
+
+          // Проверяем, есть ли сохраненный токен
+        setState(!!getToken());
         }
         
-        document.getElementById('banBtn').onclick = async () => {
-          actionMsg.textContent='';
-          const ip = document.getElementById('ipInput').value.trim();
-          const reason = document.getElementById('reasonInput').value.trim();
-          if(!ip){ actionMsg.textContent='Укажите IP'; actionMsg.className='err'; return; }
-          try{
-            const res = await fetch('/admin/ban-ip', { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + getToken() }, body: JSON.stringify({ ip, reason }) });
-            const data = await res.json();
-            if(!res.ok){ actionMsg.textContent = (data && data.error) || 'Ошибка бана'; actionMsg.className='err'; return; }
-            actionMsg.textContent='IP забанен'; actionMsg.className='ok'; 
-            loadBans();
-            loadUsers(); // Обновляем список пользователей
-          }catch(e){ actionMsg.textContent='Сеть недоступна'; actionMsg.className='err'; }
-        };
-
-        document.getElementById('unbanBtn').onclick = async () => {
-          actionMsg.textContent='';
-          const ip = document.getElementById('ipInput').value.trim();
-          if(!ip){ actionMsg.textContent='Укажите IP'; actionMsg.className='err'; return; }
-          try{
-            const res = await fetch('/admin/unban-ip', { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + getToken() }, body: JSON.stringify({ ip }) });
-            const data = await res.json();
-            if(!res.ok){ actionMsg.textContent = (data && data.error) || 'Ошибка разбана'; actionMsg.className='err'; return; }
-            actionMsg.textContent='IP разбанен'; actionMsg.className='ok'; 
-            loadBans();
-            loadUsers(); // Обновляем список пользователей
-          }catch(e){ actionMsg.textContent='Сеть недоступна'; actionMsg.className='err'; }
-        };
-
-        setState(!!getToken());
+        // Инициализация при загрузке страницы
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', initAdminPanel);
+        } else {
+          // DOM уже загружен
+          initAdminPanel();
+        }
       </script>
     </body>
     </html>
