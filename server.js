@@ -620,51 +620,123 @@ app.get("/admin", (req, res) => {
         </div>
 
         <div id="adminCard" class="card hidden">
-          <div class="row" style="justify-content: space-between;">
-            <h3>Блокировка IP</h3>
-            <button id="logoutBtn" style="background:#334155;">Выйти</button>
+          <div class="row" style="justify-content: space-between; margin-bottom: 20px;">
+            <h2 style="margin: 0;">🔐 Админ-панель ACTOGRAM</h2>
+            <button id="logoutBtn" style="background:#ef4444;">Выйти</button>
           </div>
+
+          <!-- Статистика -->
+          <div id="statsCard" class="card" style="background: linear-gradient(135deg, #1e293b, #334155); margin-top: 0;">
+            <h3 style="margin-top: 0;">📊 Статистика</h3>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px;">
+              <div style="text-align: center; padding: 12px; background: rgba(0,0,0,0.3); border-radius: 8px;">
+                <div style="font-size: 24px; font-weight: bold; color: #60a5fa;" id="statTotal">0</div>
+                <div style="font-size: 12px; color: #94a3b8;">Всего</div>
+              </div>
+              <div style="text-align: center; padding: 12px; background: rgba(0,0,0,0.3); border-radius: 8px;">
+                <div style="font-size: 24px; font-weight: bold; color: #34d399;" id="statOnline">0</div>
+                <div style="font-size: 12px; color: #94a3b8;">Онлайн</div>
+              </div>
+              <div style="text-align: center; padding: 12px; background: rgba(0,0,0,0.3); border-radius: 8px;">
+                <div style="font-size: 24px; font-weight: bold; color: #f87171;" id="statBanned">0</div>
+                <div style="font-size: 12px; color: #94a3b8;">Забанено</div>
+              </div>
+              <div style="text-align: center; padding: 12px; background: rgba(0,0,0,0.3); border-radius: 8px;">
+                <div style="font-size: 24px; font-weight: bold; color: #fbbf24;" id="statVerified">0</div>
+                <div style="font-size: 12px; color: #94a3b8;">Верифицировано</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Блокировка IP -->
+          <div class="card">
+            <h3>🛡️ Блокировка IP</h3>
           <div class="row" style="margin-top: 8px;">
-            <input id="ipInput" placeholder="IP адрес (например 1.2.3.4)" />
-            <input id="reasonInput" placeholder="Причина (необязательно)" />
+              <input id="ipInput" placeholder="IP адрес (например 1.2.3.4)" style="flex: 1;" />
+              <input id="reasonInput" placeholder="Причина (необязательно)" style="flex: 1;" />
             <button id="banBtn">Забанить IP</button>
             <button id="unbanBtn" style="background:#ef4444;">Разбанить IP</button>
           </div>
           <div id="actionMsg" class="muted" style="margin-top: 8px;"></div>
 
-          <div style="margin-top: 16px;" class="row">
-            <button id="refreshBtn">Обновить список</button>
+            <div style="margin-top: 16px;">
+              <div class="row" style="justify-content: space-between; margin-bottom: 8px;">
+                <h4 style="margin: 0;">Забаненные IP</h4>
+                <button id="refreshBansBtn" style="background:#475569; font-size: 12px; padding: 6px 12px;">Обновить</button>
           </div>
-          <div style="margin-top: 8px;">
-            <table>
+              <div style="max-height: 200px; overflow:auto; border:1px solid #1f2937; border-radius:8px;">
+                <table style="width:100%; font-size: 12px;">
               <thead>
-                <tr>
-                  <th>IP</th>
-                  <th>Причина</th>
-                  <th>Когда</th>
-                  <th>Кем</th>
+                    <tr style="background: #1f2937;">
+                      <th style="padding: 8px;">IP</th>
+                      <th style="padding: 8px;">Причина</th>
+                      <th style="padding: 8px;">Когда</th>
+                      <th style="padding: 8px;">Кем</th>
+                      <th style="padding: 8px;">Действие</th>
                 </tr>
               </thead>
               <tbody id="bansBody"></tbody>
             </table>
           </div>
-          <div style="margin-top: 24px;">
-            <h3>Пользователи</h3>
-            <p class="muted">Имя, ник и последний IP. Клик по IP заполняет поле выше.</p>
-            <div style="max-height: 320px; overflow:auto; border:1px solid #1f2937; border-radius:8px;">
-              <table style="width:100%;">
+            </div>
+          </div>
+
+          <!-- Управление пользователями -->
+          <div class="card">
+            <h3>👥 Управление пользователями</h3>
+            
+            <!-- Поиск и фильтры -->
+            <div style="margin-top: 16px;">
+              <div class="row" style="margin-bottom: 12px;">
+                <input id="searchInput" placeholder="🔍 Поиск по username, email, IP, имени..." style="flex: 1;" />
+                <select id="filterSelect" style="height: 40px; border-radius: 8px; border: 1px solid #374151; background: #0b1220; color: #e2e8f0; padding: 0 12px;">
+                  <option value="">Все пользователи</option>
+                  <option value="online">Онлайн</option>
+                  <option value="offline">Оффлайн</option>
+                  <option value="banned">Забаненные</option>
+                  <option value="verified">Верифицированные</option>
+                  <option value="unverified">Неверифицированные</option>
+                </select>
+                <select id="sortSelect" style="height: 40px; border-radius: 8px; border: 1px solid #374151; background: #0b1220; color: #e2e8f0; padding: 0 12px;">
+                  <option value="lastSeen-desc">Последняя активность (новые)</option>
+                  <option value="lastSeen-asc">Последняя активность (старые)</option>
+                  <option value="createdAt-desc">Дата регистрации (новые)</option>
+                  <option value="createdAt-asc">Дата регистрации (старые)</option>
+                  <option value="username-asc">Username (А-Я)</option>
+                  <option value="username-desc">Username (Я-А)</option>
+                </select>
+                <button id="refreshUsersBtn" style="background:#475569;">Обновить</button>
+              </div>
+            </div>
+
+            <!-- Таблица пользователей -->
+            <div style="max-height: 600px; overflow:auto; border:1px solid #1f2937; border-radius:8px; margin-top: 12px;">
+              <table style="width:100%; font-size: 13px;">
                 <thead>
-                  <tr>
-                    <th>Username</th>
-                    <th>Full name</th>
-                    <th>Last IP</th>
-                    <th>Online</th>
-                    <th>Last seen</th>
+                  <tr style="background: #1f2937; position: sticky; top: 0; z-index: 10;">
+                    <th style="padding: 10px; text-align: left;">Пользователь</th>
+                    <th style="padding: 10px; text-align: left;">Email</th>
+                    <th style="padding: 10px; text-align: left;">IP</th>
+                    <th style="padding: 10px; text-align: center;">Статус</th>
+                    <th style="padding: 10px; text-align: center;">Последняя активность</th>
+                    <th style="padding: 10px; text-align: center;">Действия</th>
                   </tr>
                 </thead>
                 <tbody id="usersBody"></tbody>
               </table>
             </div>
+            <div id="usersCount" class="muted" style="margin-top: 8px; text-align: center;"></div>
+          </div>
+        </div>
+
+        <!-- Модальное окно для деталей пользователя -->
+        <div id="userModal" class="hidden" style="position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 1000; display: none; align-items: center; justify-content: center; padding: 20px;">
+          <div class="card" style="max-width: 600px; width: 100%; max-height: 80vh; overflow: auto; position: relative;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+              <h3 style="margin: 0;">📋 Детали пользователя</h3>
+              <button id="closeModal" style="background: #ef4444; width: 32px; height: 32px; border-radius: 50%; border: none; cursor: pointer; font-size: 20px; color: white;">×</button>
+            </div>
+            <div id="userModalContent"></div>
           </div>
         </div>
 
@@ -758,8 +830,15 @@ app.get("/admin", (req, res) => {
         function setToken(t){ if(t) localStorage.setItem('admin_token', t); }
         function clearToken(){ localStorage.removeItem('admin_token'); }
         function setState(logged){
-          if(logged){ loginCard.classList.add('hidden'); adminCard.classList.remove('hidden'); loadBans(); loadUsers(); }
-          else { adminCard.classList.add('hidden'); loginCard.classList.remove('hidden'); }
+          if(logged){ 
+            loginCard.classList.add('hidden'); 
+            adminCard.classList.remove('hidden'); 
+            loadBans(); 
+            loadUsers(); 
+          } else { 
+            adminCard.classList.add('hidden'); 
+            loginCard.classList.remove('hidden'); 
+          }
         }
 
         document.getElementById('loginBtn').onclick = async () => {
@@ -776,6 +855,7 @@ app.get("/admin", (req, res) => {
 
         document.getElementById('logoutBtn').onclick = () => { clearToken(); setState(false); };
 
+        // Загрузка банов
         async function loadBans(){
           actionMsg.textContent='';
           try{
@@ -785,41 +865,251 @@ app.get("/admin", (req, res) => {
             bansBody.innerHTML = '';
             (data.items||[]).forEach(item => {
               const tr = document.createElement('tr');
-              tr.innerHTML = '<td>' + (item.ip || '') + '</td>'
-                + '<td>' + (item.reason || '') + '</td>'
-                + '<td>' + new Date(item.bannedAt).toLocaleString() + '</td>'
-                + '<td>' + (item.bannedBy || '') + '</td>';
+              tr.innerHTML = '<td style="padding: 8px;">' + (item.ip || '') + '</td>'
+                + '<td style="padding: 8px;">' + (item.reason || '-') + '</td>'
+                + '<td style="padding: 8px;">' + new Date(item.bannedAt).toLocaleString('ru-RU') + '</td>'
+                + '<td style="padding: 8px;">' + (item.bannedBy || '') + '</td>'
+                + '<td style="padding: 8px;"><button onclick="unbanIPFromTable(\'' + item.ip + '\')" style="background:#ef4444; padding: 4px 8px; font-size: 11px; border: none; border-radius: 4px; cursor: pointer;">Разбанить</button></td>';
               bansBody.appendChild(tr);
             });
           }catch(e){ actionMsg.textContent='Сеть недоступна'; actionMsg.className='err'; }
         }
 
-        document.getElementById('refreshBtn').onclick = () => { loadBans(); loadUsers(); };
+        window.unbanIPFromTable = async (ip) => {
+          if(!confirm('Разбанить IP ' + ip + '?')) return;
+          document.getElementById('ipInput').value = ip;
+          document.getElementById('unbanBtn').click();
+        };
+
+        document.getElementById('refreshBansBtn').onclick = () => { loadBans(); };
+        
+        // Загрузка пользователей с поиском и фильтрами
+        let currentSearch = '';
+        let currentFilter = '';
+        let currentSort = 'lastSeen-desc';
         
         async function loadUsers(){
           try{
-            const res = await fetch('/admin/users', { headers: { 'Authorization': 'Bearer ' + getToken() }});
+            const search = document.getElementById('searchInput').value.trim();
+            const filter = document.getElementById('filterSelect').value;
+            const sort = document.getElementById('sortSelect').value;
+            const [sortBy, sortOrder] = sort.split('-');
+            
+            const params = new URLSearchParams();
+            if(search) params.append('search', search);
+            if(filter) params.append('filter', filter);
+            params.append('sortBy', sortBy);
+            params.append('sortOrder', sortOrder);
+            
+            const res = await fetch('/admin/users?' + params.toString(), { 
+              headers: { 'Authorization': 'Bearer ' + getToken() } 
+            });
             const data = await res.json();
             if(!res.ok){ return; }
+            
+            // Обновляем статистику
+            if(data.stats){
+              document.getElementById('statTotal').textContent = data.stats.total || 0;
+              document.getElementById('statOnline').textContent = data.stats.online || 0;
+              document.getElementById('statBanned').textContent = data.stats.banned || 0;
+              document.getElementById('statVerified').textContent = data.stats.verified || 0;
+            }
+            
             usersBody.innerHTML = '';
-            (data.items||[]).forEach(u => {
+            const users = data.items || [];
+            document.getElementById('usersCount').textContent = 'Найдено пользователей: ' + users.length;
+            
+            users.forEach(u => {
               const tr = document.createElement('tr');
-              const lastSeen = u.lastSeen ? new Date(u.lastSeen).toLocaleString() : '';
-              tr.innerHTML = '<td>' + (u.username||'') + '</td>'
-                + '<td>' + (u.fullName||'') + '</td>'
-                + '<td><a href="#" data-ip="' + (u.lastIp||'') + '" class="pick-ip">' + (u.lastIp||'') + '</a></td>'
-                + '<td>' + (u.isOnline? '🟢' : '⚪') + '</td>'
-                + '<td>' + lastSeen + '</td>';
+              tr.style.borderBottom = '1px solid #1f2937';
+              tr.style.cursor = 'pointer';
+              tr.onmouseenter = () => tr.style.background = '#1f2937';
+              tr.onmouseleave = () => tr.style.background = '';
+              
+              const statusIcon = u.status === 'banned' ? '🚫' : (u.isOnline ? '🟢' : '⚪');
+              const statusText = u.status === 'banned' ? 'Забанен' : (u.isOnline ? 'Онлайн' : 'Оффлайн');
+              const verifiedBadge = u.isVerified ? ' <span style="color: #fbbf24;">✓</span>' : '';
+              const lastSeen = u.lastSeen ? new Date(u.lastSeen).toLocaleString('ru-RU') : 'Никогда';
+              const createdAt = u.createdAt ? new Date(u.createdAt).toLocaleString('ru-RU') : '';
+              
+              tr.innerHTML = '<td style="padding: 10px;"><strong>' + (u.username||'') + '</strong>' + verifiedBadge + '<br><span style="color: #94a3b8; font-size: 11px;">' + (u.fullName||'') + '</span></td>'
+                + '<td style="padding: 10px; font-size: 12px;">' + (u.email||'-') + '</td>'
+                + '<td style="padding: 10px;"><a href="#" data-ip="' + (u.lastIp||'') + '" class="pick-ip" style="color: #60a5fa; text-decoration: none;">' + (u.lastIp||'-') + '</a></td>'
+                + '<td style="padding: 10px; text-align: center;"><span style="font-size: 16px;">' + statusIcon + '</span><br><span style="font-size: 11px; color: #94a3b8;">' + statusText + '</span></td>'
+                + '<td style="padding: 10px; text-align: center; font-size: 11px; color: #94a3b8;">' + lastSeen + '</td>'
+                + '<td style="padding: 10px; text-align: center;"><button onclick="showUserDetails(\'' + u.id + '\')" style="background:#3b82f6; padding: 4px 8px; font-size: 11px; border: none; border-radius: 4px; cursor: pointer; margin: 2px;">Детали</button>' 
+                + (u.status === 'banned' 
+                  ? '<button onclick="unbanUser(\'' + u.id + '\', \'' + (u.username||'') + '\')" style="background:#10b981; padding: 4px 8px; font-size: 11px; border: none; border-radius: 4px; cursor: pointer; margin: 2px;">Разбанить</button>'
+                  : '<button onclick="banUser(\'' + u.id + '\', \'' + (u.username||'') + '\')" style="background:#ef4444; padding: 4px 8px; font-size: 11px; border: none; border-radius: 4px; cursor: pointer; margin: 2px;">Забанить</button>') + '</td>';
+              tr.setAttribute('data-user-id', u.id);
+              tr.onclick = () => showUserDetails(u.id);
               usersBody.appendChild(tr);
             });
+            
             usersBody.querySelectorAll('a.pick-ip').forEach(a => {
               a.addEventListener('click', (e) => {
+                e.stopPropagation();
                 e.preventDefault();
                 const ip = a.getAttribute('data-ip');
-                if(ip){ document.getElementById('ipInput').value = ip; }
+                if(ip && ip !== '-'){ 
+                  document.getElementById('ipInput').value = ip;
+                  document.getElementById('ipInput').scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
               });
             });
-          }catch(e){}
+            
+            currentSearch = search;
+            currentFilter = filter;
+            currentSort = sort;
+          }catch(e){
+            console.error('Load users error:', e);
+          }
+        }
+
+        // Показать детали пользователя
+        window.showUserDetails = async (userId) => {
+          try{
+            // Получаем всех пользователей и ищем по ID
+            const res = await fetch('/admin/users', { 
+              headers: { 'Authorization': 'Bearer ' + getToken() } 
+            });
+            const data = await res.json();
+            const user = data.items && data.items.find(u => u.id === userId);
+            if(!user) {
+              // Если не нашли в текущем списке, ищем по ID напрямую
+              const res2 = await fetch('/admin/users?search=' + userId.substring(0, 8), { 
+                headers: { 'Authorization': 'Bearer ' + getToken() } 
+              });
+              const data2 = await res2.json();
+              const user2 = data2.items && data2.items.find(u => u.id === userId);
+              if(!user2) {
+                alert('Пользователь не найден');
+                return;
+              }
+              showUserModal(user2);
+              return;
+            }
+            showUserModal(user);
+          }catch(e){
+            console.error('Show user details error:', e);
+            alert('Ошибка загрузки данных пользователя');
+          }
+        };
+
+        function showUserModal(user) {
+            const modal = document.getElementById('userModal');
+            const content = document.getElementById('userModalContent');
+            
+            const statusIcon = user.status === 'banned' ? '🚫' : (user.isOnline ? '🟢' : '⚪');
+            const statusText = user.status === 'banned' ? 'Забанен' : (user.isOnline ? 'Онлайн' : 'Оффлайн');
+            const lastSeen = user.lastSeen ? new Date(user.lastSeen).toLocaleString('ru-RU') : 'Никогда';
+            const createdAt = user.createdAt ? new Date(user.createdAt).toLocaleString('ru-RU') : '';
+            const userAvatar = user.avatar ? '<img src="' + user.avatar + '" style="width: 64px; height: 64px; border-radius: 50%; margin-bottom: 12px;" />' : '<div style="width: 64px; height: 64px; border-radius: 50%; background: #374151; display: flex; align-items: center; justify-content: center; font-size: 24px; margin-bottom: 12px;">' + (user.username ? user.username.charAt(0).toUpperCase() : '?') + '</div>';
+            
+            content.innerHTML = '<div style="line-height: 1.8;">'
+              + '<div style="text-align: center; margin-bottom: 20px;">' + userAvatar + '</div>'
+              + '<div style="background: #1f2937; padding: 12px; border-radius: 8px; margin-bottom: 12px;"><strong>ID:</strong> <code style="background: #0b1220; padding: 2px 6px; border-radius: 4px; font-size: 11px;">' + user.id + '</code></div>'
+              + '<strong>Username:</strong> ' + (user.username||'') + (user.isVerified ? ' <span style="color: #fbbf24;">✓ Верифицирован</span>' : '') + '<br>'
+              + '<strong>Полное имя:</strong> ' + (user.fullName||'-') + '<br>'
+              + '<strong>Email:</strong> ' + (user.email||'-') + '<br>'
+              + '<strong>Bio:</strong> ' + (user.bio||'-') + '<br>'
+              + '<strong>Статус:</strong> ' + statusIcon + ' ' + statusText + '<br>'
+              + '<strong>Последний IP:</strong> <a href="#" onclick="document.getElementById(\'ipInput\').value=\'' + (user.lastIp||'') + '\'; closeUserModal(); return false;" style="color: #60a5fa;">' + (user.lastIp||'-') + '</a><br>'
+              + '<strong>Последняя активность:</strong> ' + lastSeen + '<br>'
+              + '<strong>Дата регистрации:</strong> ' + createdAt + '<br><br>'
+              + '<div style="display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap;">'
+              + (user.status === 'banned' 
+                ? '<button onclick="unbanUser(\'' + user.id + '\', \'' + (user.username||'').replace(/'/g, "\\'") + '\'); closeUserModal();" style="background:#10b981; padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; flex: 1; min-width: 150px;">✅ Разбанить</button>'
+                : '<button onclick="banUser(\'' + user.id + '\', \'' + (user.username||'').replace(/'/g, "\\'") + '\'); closeUserModal();" style="background:#ef4444; padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; flex: 1; min-width: 150px;">🚫 Забанить</button>')
+              + (user.lastIp && user.lastIp !== '-' 
+                ? '<button onclick="banUserIP(\'' + (user.lastIp||'') + '\'); closeUserModal();" style="background:#f59e0b; padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; flex: 1; min-width: 150px;">🛡️ Забанить IP</button>'
+                : '')
+              + '</div></div>';
+            
+            modal.style.display = 'flex';
+            modal.classList.remove('hidden');
+        }
+
+        window.closeUserModal = () => {
+          const modal = document.getElementById('userModal');
+          modal.style.display = 'none';
+          modal.classList.add('hidden');
+        };
+
+        document.getElementById('closeModal').onclick = closeUserModal;
+        document.getElementById('userModal').onclick = (e) => {
+          if(e.target.id === 'userModal') closeUserModal();
+        };
+
+        // Бан пользователя
+        window.banUser = async (userId, username) => {
+          if(!confirm('Забанить пользователя ' + username + '?')) return;
+          try{
+            const res = await fetch('/admin/ban-user', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + getToken() },
+              body: JSON.stringify({ userId })
+            });
+            const data = await res.json();
+            if(!res.ok){
+              alert('Ошибка: ' + (data.error || 'Неизвестная ошибка'));
+              return;
+            }
+            alert('Пользователь ' + username + ' забанен');
+            loadUsers();
+          }catch(e){
+            alert('Ошибка сети');
+          }
+        };
+
+        // Разбан пользователя
+        window.unbanUser = async (userId, username) => {
+          if(!confirm('Разбанить пользователя ' + username + '?')) return;
+          try{
+            const res = await fetch('/admin/unban-user', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + getToken() },
+              body: JSON.stringify({ userId })
+            });
+            const data = await res.json();
+            if(!res.ok){
+              alert('Ошибка: ' + (data.error || 'Неизвестная ошибка'));
+              return;
+            }
+            alert('Пользователь ' + username + ' разбанен');
+            loadUsers();
+          }catch(e){
+            alert('Ошибка сети');
+          }
+        };
+
+        // Бан IP пользователя
+        window.banUserIP = (ip) => {
+          if(!ip || ip === '-') {
+            alert('IP адрес не найден');
+            return;
+          }
+          document.getElementById('ipInput').value = ip;
+          const reason = prompt('Причина бана IP ' + ip + ':');
+          if(reason !== null){
+            document.getElementById('reasonInput').value = reason;
+            document.getElementById('banBtn').click();
+          }
+        };
+
+        // Поиск и фильтры
+        document.getElementById('searchInput').addEventListener('input', debounce(loadUsers, 500));
+        document.getElementById('filterSelect').addEventListener('change', loadUsers);
+        document.getElementById('sortSelect').addEventListener('change', loadUsers);
+        document.getElementById('refreshUsersBtn').onclick = loadUsers;
+
+        function debounce(func, wait){
+          let timeout;
+          return function executedFunction(...args){
+            const later = () => { clearTimeout(timeout); func(...args); };
+            clearTimeout(timeout);
+            timeout = setTimeout(later, wait);
+          };
         }
         
         document.getElementById('banBtn').onclick = async () => {
@@ -831,7 +1121,9 @@ app.get("/admin", (req, res) => {
             const res = await fetch('/admin/ban-ip', { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + getToken() }, body: JSON.stringify({ ip, reason }) });
             const data = await res.json();
             if(!res.ok){ actionMsg.textContent = (data && data.error) || 'Ошибка бана'; actionMsg.className='err'; return; }
-            actionMsg.textContent='IP забанен'; actionMsg.className='ok'; loadBans();
+            actionMsg.textContent='IP забанен'; actionMsg.className='ok'; 
+            loadBans();
+            loadUsers(); // Обновляем список пользователей
           }catch(e){ actionMsg.textContent='Сеть недоступна'; actionMsg.className='err'; }
         };
 
@@ -843,7 +1135,9 @@ app.get("/admin", (req, res) => {
             const res = await fetch('/admin/unban-ip', { method:'POST', headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer ' + getToken() }, body: JSON.stringify({ ip }) });
             const data = await res.json();
             if(!res.ok){ actionMsg.textContent = (data && data.error) || 'Ошибка разбана'; actionMsg.className='err'; return; }
-            actionMsg.textContent='IP разбанен'; actionMsg.className='ok'; loadBans();
+            actionMsg.textContent='IP разбанен'; actionMsg.className='ok'; 
+            loadBans();
+            loadUsers(); // Обновляем список пользователей
           }catch(e){ actionMsg.textContent='Сеть недоступна'; actionMsg.className='err'; }
         };
 
@@ -891,9 +1185,62 @@ app.get("/admin/bans", requireAdmin, async (req, res) => {
 
 app.get("/admin/users", requireAdmin, async (req, res) => {
   try {
-    const users = await User.find({}, "_id username fullName email lastSeen isOnline lastIp status isVerified")
-      .sort({ lastSeen: -1 })
+    const { search, filter, sortBy = "lastSeen", sortOrder = "desc" } = req.query
+    
+    let query = {}
+    
+    // Поиск
+    if (search && search.trim()) {
+      const searchTerm = search.trim()
+      // Проверяем, является ли поисковый запрос ObjectId
+      const isObjectId = /^[0-9a-fA-F]{24}$/.test(searchTerm)
+      if (isObjectId) {
+        try {
+          // Если это ObjectId, ищем напрямую по _id
+          query._id = new mongoose.Types.ObjectId(searchTerm)
+        } catch (e) {
+          // Если не валидный ObjectId, ищем по текстовым полям
+          query.$or = [
+            { username: { $regex: searchTerm, $options: "i" } },
+            { fullName: { $regex: searchTerm, $options: "i" } },
+            { email: { $regex: searchTerm, $options: "i" } },
+            { lastIp: { $regex: searchTerm, $options: "i" } },
+          ]
+        }
+      } else {
+        // Иначе ищем по текстовым полям
+        query.$or = [
+          { username: { $regex: searchTerm, $options: "i" } },
+          { fullName: { $regex: searchTerm, $options: "i" } },
+          { email: { $regex: searchTerm, $options: "i" } },
+          { lastIp: { $regex: searchTerm, $options: "i" } },
+        ]
+      }
+    }
+    
+    // Фильтры
+    if (filter) {
+      if (filter === "online") query.isOnline = true
+      if (filter === "offline") query.isOnline = false
+      if (filter === "banned") query.status = "banned"
+      if (filter === "verified") query.isVerified = true
+      if (filter === "unverified") query.isVerified = false
+    }
+    
+    // Сортировка
+    const sortOptions = {}
+    sortOptions[sortBy] = sortOrder === "asc" ? 1 : -1
+    
+    const users = await User.find(query, "_id username fullName email lastSeen isOnline lastIp status isVerified createdAt bio avatar")
+      .sort(sortOptions)
       .lean()
+    
+    // Статистика
+    const totalUsers = await User.countDocuments({})
+    const onlineUsers = await User.countDocuments({ isOnline: true })
+    const bannedUsers = await User.countDocuments({ status: "banned" })
+    const verifiedUsers = await User.countDocuments({ isVerified: true })
+    
     const items = users.map((u) => ({
       id: u._id.toString(),
       username: u.username,
@@ -902,11 +1249,25 @@ app.get("/admin/users", requireAdmin, async (req, res) => {
       isOnline: !!u.isOnline,
       lastSeen: u.lastSeen,
       lastIp: u.lastIp || "",
-      status: u.status || "",
+      status: u.status || "offline",
       isVerified: !!u.isVerified,
+      createdAt: u.createdAt,
+      bio: u.bio || "",
+      avatar: u.avatar || "",
     }))
-    res.json({ items })
+    
+    res.json({ 
+      items,
+      stats: {
+        total: totalUsers,
+        online: onlineUsers,
+        offline: totalUsers - onlineUsers,
+        banned: bannedUsers,
+        verified: verifiedUsers,
+      }
+    })
   } catch (e) {
+    console.error("Admin users error:", e)
     res.status(500).json({ error: "Ошибка получения пользователей" })
   }
 })
@@ -938,6 +1299,56 @@ app.post("/admin/unban-ip", requireAdmin, async (req, res) => {
     res.json({ success: true })
   } catch (e) {
     res.status(500).json({ error: "Ошибка разбана" })
+  }
+})
+
+app.post("/admin/ban-user", requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.body
+    if (!userId) {
+      return res.status(400).json({ error: "userId обязателен" })
+    }
+    
+    await User.findByIdAndUpdate(userId, { 
+      status: "banned",
+      isOnline: false
+    })
+    
+    // Отключаем пользователя если он онлайн
+    for (const [socketId, uid] of activeConnections.entries()) {
+      if (uid === userId) {
+        const socket = io.sockets.sockets.get(socketId)
+        if (socket) {
+          socket.emit("error", { message: "Ваш аккаунт заблокирован" })
+          socket.disconnect(true)
+        }
+      }
+    }
+    
+    console.log(`🚫 Пользователь ${userId} забанен через админ-панель`)
+    res.json({ success: true })
+    
+  } catch (error) {
+    console.error("admin ban-user error:", error)
+    res.status(500).json({ error: "Ошибка бана пользователя" })
+  }
+})
+
+app.post("/admin/unban-user", requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.body
+    if (!userId) {
+      return res.status(400).json({ error: "userId обязателен" })
+    }
+    
+    await User.findByIdAndUpdate(userId, { status: "offline" })
+    
+    console.log(`✅ Пользователь ${userId} разбанен через админ-панель`)
+    res.json({ success: true })
+    
+  } catch (error) {
+    console.error("admin unban-user error:", error)
+    res.status(500).json({ error: "Ошибка разбана пользователя" })
   }
 })
 
@@ -1747,7 +2158,7 @@ io.on("connection", async (socket) => {
       })
         .limit(10)
         .lean()
-      const results = usersFound.map((u) => ({
+const results = usersFound.map((u) => ({
         id: u._id.toString(),
         username: u.username,
         fullName: u.fullName,
