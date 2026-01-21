@@ -820,12 +820,15 @@ app.get("/admin", (req, res) => {
         })();
 
         function initAdminPanel() {
+        console.log('🔍 initAdminPanel вызвана');
         const loginCard = document.getElementById('loginCard');
         const adminCard = document.getElementById('adminCard');
         const loginMsg = document.getElementById('loginMsg');
         const actionMsg = document.getElementById('actionMsg');
         const bansBody = document.getElementById('bansBody');
         const usersBody = document.getElementById('usersBody');
+          
+        console.log('🔍 Элементы найдены:', { loginCard: !!loginCard, adminCard: !!adminCard });
           
           if(!loginCard || !adminCard) {
             console.error('Admin panel elements not found!');
@@ -971,8 +974,11 @@ app.get("/admin", (req, res) => {
 
           // Обработчик входа
           const loginBtn = document.getElementById('loginBtn');
+          console.log('🔍 Кнопка входа найдена:', !!loginBtn);
           if(loginBtn) {
+            console.log('🔍 Добавляем обработчик клика');
             loginBtn.addEventListener('click', async (e) => {
+              console.log('🔍 Клик по кнопке входа!');
               e.preventDefault();
               e.stopPropagation();
               if(loginMsg) {
