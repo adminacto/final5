@@ -244,10 +244,22 @@ const BannedIPSchema = new Schema({
     bannedBy: { type: String, default: ADMIN_USERNAME },
 })
 
+const FriendRequestSchema = new Schema({
+    from: { type: Schema.Types.ObjectId, ref: "User", required: true },
+    to: { type: Schema.Types.ObjectId, ref: "User", required: true },
+    status: { type: String, enum: ["pending", "accepted", "rejected"], default: "pending" },
+    createdAt: { type: Date, default: Date.now },
+    updatedAt: { type: Date, default: Date.now },
+})
+
+// Индекс для быстрого поиска
+FriendRequestSchema.index({ from: 1, to: 1 }, { unique: true })
+
 const User = model("User", UserSchema)
 const Chat = model("Chat", ChatSchema)
 const Message = model("Message", MessageSchema)
 const BannedIP = model("BannedIP", BannedIPSchema)
+const FriendRequest = model("FriendRequest", FriendRequestSchema)
 
 // ========== UTILITY FUNCTIONS ==========
 
@@ -2378,6 +2390,69 @@ io.on("connection", async (socket) => {
                 return
             }
 
+            // Проверяем, есть ли уже принятый запрос в друзья
+            const existingRequest = await FriendRequest.findOne({
+                $or: [
+                    { from: user.id, to: userId, status: "accepted" },
+                    { from: userId, to: user.id, status: "accepted" },
+                ],
+            })
+
+            if (!existingRequest) {
+                // Проверяем, есть ли уже отправленный запрос
+                const pendingRequest = await FriendRequest.findOne({
+                    $or: [
+                        { from: user.id, to: userId, status: "pending" },
+                        { from: userId, to: user.id, status: "pending" },
+                    ],
+                })
+
+                if (pendingRequest) {
+                    socket.emit("error", { message: "Запрос в друзья уже отправлен" })
+                    return
+                }
+
+                // Создаем новый запрос в друзья
+                const friendRequest = await FriendRequest.create({
+                    from: user.id,
+                    to: userId,
+                    status: "pending",
+                })
+
+                const fromUser = await User.findById(user.id).lean()
+                const toUser = await User.findById(userId).lean()
+
+                // Уведомляем получателя о запросе
+                const targetSocket = Array.from(io.sockets.sockets.values()).find((s) => s.userId === userId)
+                if (targetSocket) {
+                    targetSocket.emit("friend_request_received", {
+                        id: friendRequest._id.toString(),
+                        from: {
+                            id: fromUser._id.toString(),
+                            username: fromUser.username,
+                            fullName: fromUser.fullName,
+                            avatar: fromUser.avatar,
+                        },
+                        createdAt: friendRequest.createdAt,
+                    })
+                }
+
+                socket.emit("friend_request_sent", {
+                    id: friendRequest._id.toString(),
+                    to: {
+                        id: toUser._id.toString(),
+                        username: toUser.username,
+                        fullName: toUser.fullName,
+                        avatar: toUser.avatar,
+                    },
+                    createdAt: friendRequest.createdAt,
+                })
+
+                console.log(`👥 Запрос в друзья: ${user.username} → ${toUser.username}`)
+                return
+            }
+
+            // Если запрос принят, создаем чат
             let chat = await Chat.findById(chatId)
             if (!chat) {
                 const otherUser = await User.findById(userId).lean()
@@ -2428,6 +2503,158 @@ io.on("connection", async (socket) => {
         }
     })
 
+    // Принять запрос в друзья
+    socket.on("accept_friend_request", async (data) => {
+        try {
+            const { requestId } = data
+
+            const friendRequest = await FriendRequest.findById(requestId)
+            if (!friendRequest) {
+                socket.emit("error", { message: "Запрос не найден" })
+                return
+            }
+
+            if (friendRequest.to.toString() !== user.id) {
+                socket.emit("error", { message: "Это не ваш запрос" })
+                return
+            }
+
+            friendRequest.status = "accepted"
+            friendRequest.updatedAt = new Date()
+            await friendRequest.save()
+
+            const fromUser = await User.findById(friendRequest.from).lean()
+            const toUser = await User.findById(friendRequest.to).lean()
+
+            // Создаем приватный чат
+            const chatId = `private_${[friendRequest.from.toString(), friendRequest.to.toString()].sort().join("_")}`
+
+            let chat = await Chat.findById(chatId)
+            if (!chat) {
+                chat = await Chat.create({
+                    _id: chatId,
+                    name: fromUser.username,
+                    avatar: fromUser.avatar || null,
+                    description: `Приватный чат с ${fromUser.username}`,
+                    isGroup: false,
+                    participants: [friendRequest.from, friendRequest.to],
+                    createdAt: new Date(),
+                    type: "private",
+                    isEncrypted: true,
+                    createdBy: friendRequest.to,
+                    theme: "default",
+                    isPinned: false,
+                    isMuted: false,
+                })
+            }
+
+            const populatedChat = await Chat.findById(chat._id)
+                .populate("participants", "_id username fullName avatar isOnline isVerified status")
+                .lean()
+
+            socket.join(chatId)
+
+            // Уведомляем отправителя запроса
+            const targetSocket = Array.from(io.sockets.sockets.values()).find(
+                (s) => s.userId === friendRequest.from.toString()
+            )
+            if (targetSocket) {
+                targetSocket.join(chatId)
+                targetSocket.emit("friend_request_accepted", {
+                    requestId: friendRequest._id.toString(),
+                    chat: {
+                        ...populatedChat,
+                        id: populatedChat._id?.toString() || populatedChat._id,
+                        participants: populatedChat.participants.filter((p) => p !== null),
+                    },
+                })
+            }
+
+            socket.emit("friend_request_accepted", {
+                requestId: friendRequest._id.toString(),
+                chat: {
+                    ...populatedChat,
+                    id: populatedChat._id?.toString() || populatedChat._id,
+                    participants: populatedChat.participants.filter((p) => p !== null),
+                },
+            })
+
+            console.log(`✅ Запрос в друзья принят: ${fromUser.username} ↔ ${toUser.username}`)
+        } catch (error) {
+            console.error("accept_friend_request error:", error)
+        }
+    })
+
+    // Отклонить запрос в друзья
+    socket.on("reject_friend_request", async (data) => {
+        try {
+            const { requestId } = data
+
+            const friendRequest = await FriendRequest.findById(requestId)
+            if (!friendRequest) {
+                socket.emit("error", { message: "Запрос не найден" })
+                return
+            }
+
+            if (friendRequest.to.toString() !== user.id) {
+                socket.emit("error", { message: "Это не ваш запрос" })
+                return
+            }
+
+            friendRequest.status = "rejected"
+            friendRequest.updatedAt = new Date()
+            await friendRequest.save()
+
+            const fromUser = await User.findById(friendRequest.from).lean()
+
+            // Уведомляем отправителя запроса
+            const targetSocket = Array.from(io.sockets.sockets.values()).find(
+                (s) => s.userId === friendRequest.from.toString()
+            )
+            if (targetSocket) {
+                targetSocket.emit("friend_request_rejected", {
+                    requestId: friendRequest._id.toString(),
+                })
+            }
+
+            socket.emit("friend_request_rejected", {
+                requestId: friendRequest._id.toString(),
+            })
+
+            console.log(`❌ Запрос в друзья отклонен: ${fromUser.username} → ${user.username}`)
+        } catch (error) {
+            console.error("reject_friend_request error:", error)
+        }
+    })
+
+    // Получить список входящих запросов
+    socket.on("get_friend_requests", async () => {
+        try {
+            const requests = await FriendRequest.find({
+                to: user.id,
+                status: "pending",
+            })
+                .populate("from", "_id username fullName avatar isOnline")
+                .lean()
+
+            const formattedRequests = requests.map((req) => ({
+                id: req._id.toString(),
+                from: {
+                    id: req.from._id.toString(),
+                    username: req.from.username,
+                    fullName: req.from.fullName,
+                    avatar: req.from.avatar,
+                    isOnline: req.from.isOnline,
+                },
+                createdAt: req.createdAt,
+            }))
+
+            socket.emit("friend_requests_list", formattedRequests)
+        } catch (error) {
+            console.error("get_friend_requests error:", error)
+        }
+    })
+
     socket.on("join_chat", async (chatId) => {
         try {
             if (chatId === "global") {
@@ -2445,7 +2672,6 @@ io.on("connection", async (socket) => {
 
             const isParticipant = chat.participants.some((p) => p && p.toString() === user.id)
             if (!isParticipant) {
-                яяяяя
                 socket.emit("error", {
                     message: "Вы не являетесь участником этого чата",
                 })
