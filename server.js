@@ -851,7 +851,7 @@ app.get("/admin", (req, res) => {
                   + '<td style="padding: 8px;">' + (item.reason || '-') + '</td>'
                   + '<td style="padding: 8px;">' + new Date(item.bannedAt).toLocaleString('ru-RU') + '</td>'
                   + '<td style="padding: 8px;">' + (item.bannedBy || '') + '</td>'
-                  + '<td style="padding: 8px;"><button onclick="window.unbanIPFromTable(\'' + item.ip + '\')" style="background:#ef4444; padding: 4px 8px; font-size: 11px; border: none; border-radius: 4px; cursor: pointer;">Разбанить</button></td>';
+                  + '<td style="padding: 8px;"><button onclick="window.unbanIPFromTable(' + JSON.stringify(item.ip) + ')" style="background:#ef4444; padding: 4px 8px; font-size: 11px; border: none; border-radius: 4px; cursor: pointer;">Разбанить</button></td>';
               bansBody.appendChild(tr);
             });
             }catch(e){ 
@@ -925,10 +925,10 @@ app.get("/admin", (req, res) => {
                   + '<td style="padding: 10px;"><a href="#" data-ip="' + (u.lastIp||'') + '" class="pick-ip" style="color: #60a5fa; text-decoration: none;">' + (u.lastIp||'-') + '</a></td>'
                   + '<td style="padding: 10px; text-align: center;"><span style="font-size: 16px;">' + statusIcon + '</span><br><span style="font-size: 11px; color: #94a3b8;">' + statusText + '</span></td>'
                   + '<td style="padding: 10px; text-align: center; font-size: 11px; color: #94a3b8;">' + lastSeen + '</td>'
-                  + '<td style="padding: 10px; text-align: center;"><button onclick="window.showUserDetails(\'' + u.id + '\')" style="background:#3b82f6; padding: 4px 8px; font-size: 11px; border: none; border-radius: 4px; cursor: pointer; margin: 2px;">Детали</button>' 
+                  + '<td style="padding: 10px; text-align: center;"><button onclick="window.showUserDetails(' + JSON.stringify(u.id) + ')" style="background:#3b82f6; padding: 4px 8px; font-size: 11px; border: none; border-radius: 4px; cursor: pointer; margin: 2px;">Детали</button>' 
                   + (u.status === 'banned' 
-                    ? '<button onclick="window.unbanUser(\'' + u.id + '\', \'' + safeUsername + '\')" style="background:#10b981; padding: 4px 8px; font-size: 11px; border: none; border-radius: 4px; cursor: pointer; margin: 2px;">Разбанить</button>'
-                    : '<button onclick="window.banUser(\'' + u.id + '\', \'' + safeUsername + '\')" style="background:#ef4444; padding: 4px 8px; font-size: 11px; border: none; border-radius: 4px; cursor: pointer; margin: 2px;">Забанить</button>') + '</td>';
+                    ? '<button onclick="window.unbanUser(' + JSON.stringify(u.id) + ', ' + JSON.stringify(safeUsername) + ')" style="background:#10b981; padding: 4px 8px; font-size: 11px; border: none; border-radius: 4px; cursor: pointer; margin: 2px;">Разбанить</button>'
+                    : '<button onclick="window.banUser(' + JSON.stringify(u.id) + ', ' + JSON.stringify(safeUsername) + ')" style="background:#ef4444; padding: 4px 8px; font-size: 11px; border: none; border-radius: 4px; cursor: pointer; margin: 2px;">Забанить</button>') + '</td>';
                 tr.setAttribute('data-user-id', u.id);
                 tr.onclick = () => window.showUserDetails(u.id);
               usersBody.appendChild(tr);
@@ -2068,7 +2068,7 @@ app.post("/api/unban-user", authenticateToken, async (req, res) => {
   try {
     const currentUser = await User.findById(req.user.userId)
     if (!currentUser || !currentUser.isAdmin) {
-      return res.status(403).json({ error: "Только админ может разбанить" })
+      return res.status(403).json({ error: "Только админ может разб��нить" })
     }
     
     const { userId } = req.body
@@ -2416,7 +2416,7 @@ const results = usersFound.map((u) => ({
         participants: populatedChat.participants.filter((p) => p !== null),
       })
 
-      console.log(`💬 Создан приватный чат: ${user.username} ↔ ${userId}`)
+      console.log(`💬 С��здан приватный чат: ${user.username} ↔ ${userId}`)
     } catch (error) {
       console.error("create_private_chat error:", error)
     }
@@ -2438,7 +2438,7 @@ const results = usersFound.map((u) => ({
       }
 
       const isParticipant = chat.participants.some((p) => p && p.toString() === user.id)
-      if (!isParticipant) {яяяяя
+      if (!isParticipant) {
         socket.emit("error", {
           message: "Вы не являетесь участником этого чата",
         })
