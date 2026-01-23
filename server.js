@@ -2246,7 +2246,7 @@ io.on("connection", async (socket) => {
         const globalChat = await Chat.findById("global").lean()
         if (globalChat && !chatList.some((chat) => (chat.id || chat._id) === "global")) {
           const globalLastMessage = await Message.findOne({ chat: "global" })
-            .sort({ timestamp:)
+            .sort({ timestamp: -1 })
             .populate("sender", "username fullName avatar")
             .lean()
           const globalMessageCount = await Message.countDocuments({
