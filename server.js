@@ -847,7 +847,11 @@ app.get("/admin", (req, res) => {
         // Функция экранирования для использования в JavaScript строках (onclick)
         function escapeJs(str) {
           if (!str) return '';
-          return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '\\r');
+          return String(str)
+            .replace(/'/g, "\\'")
+            .replace(/"/g, '\\"')
+            .replace(/\n/g, '\\n')
+            .replace(/\r/g, '\\r');
         }
           
           // Загрузка банов
@@ -1049,20 +1053,6 @@ app.get("/admin", (req, res) => {
             logoutBtn.onclick = () => { clearToken(); setState(false); };
           }
           
-          // Функция экранирования HTML
-          function escapeHtml(text) {
-            if (!text) return '';
-            const div = document.createElement('div');
-            div.textContent = String(text);
-            return div.innerHTML;
-          }
-          
-          // Функция экранирования для использования в JavaScript строках (onclick)
-          function escapeJs(str) {
-            if (!str) return '';
-            return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '\\r');
-          }
-
           // Функция показа модального окна с деталями пользователя и активностью
           function showUserModal(user, activity) {
             const modal = document.getElementById('userModal');
