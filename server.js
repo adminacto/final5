@@ -844,16 +844,6 @@ app.get("/admin", (req, res) => {
           return div.innerHTML;
         }
         
-        // Функция экранирования для использования в JavaScript строках (onclick)
-        function escapeJs(str) {
-          if (!str) return '';
-          return String(str)
-            .replace(/'/g, "\\'")
-            .replace(/"/g, '\\"')
-            .replace(/\n/g, '\\n')
-            .replace(/\r/g, '\\r');
-        }
-          
           // Загрузка банов
         async function loadBans(){
             if(!actionMsg || !bansBody) return;
@@ -936,8 +926,6 @@ app.get("/admin", (req, res) => {
                 const statusText = u.status === 'banned' ? 'Забанен' : (u.isOnline ? 'Онлайн' : 'Оффлайн');
                 const verifiedBadge = u.isVerified ? ' <span style="color: #fbbf24;">✓</span>' : '';
                 const lastSeen = u.lastSeen ? new Date(u.lastSeen).toLocaleString('ru-RU') : 'Никогда';
-                const safeUsername = escapeJs(u.username || '');
-                const safeLastIp = escapeHtml(u.lastIp || '');
                 
                 tr.innerHTML = '<td style="padding: 10px;"><strong>' + escapeHtml(u.username || '') + '</strong>' + verifiedBadge + '<br><span style="color: #94a3b8; font-size: 11px;">' + escapeHtml(u.fullName || '') + '</span></td>'
                   + '<td style="padding: 10px; font-size: 12px;">' + escapeHtml(u.email || '-') + '</td>'
@@ -946,8 +934,8 @@ app.get("/admin", (req, res) => {
                   + '<td style="padding: 10px; text-align: center; font-size: 11px; color: #94a3b8;">' + escapeHtml(lastSeen) + '</td>'
                   + '<td style="padding: 10px; text-align: center;"><button onclick="window.showUserDetails(' + JSON.stringify(u.id) + ')" style="background:#3b82f6; padding: 4px 8px; font-size: 11px; border: none; border-radius: 4px; cursor: pointer; margin: 2px;">Детали</button>' 
                   + (u.status === 'banned' 
-                    ? '<button onclick="window.unbanUser(' + JSON.stringify(u.id) + ', ' + JSON.stringify(safeUsername) + ')" style="background:#10b981; padding: 4px 8px; font-size: 11px; border: none; border-radius: 4px; cursor: pointer; margin: 2px;">Разбанить</button>'
-                    : '<button onclick="window.banUser(' + JSON.stringify(u.id) + ', ' + JSON.stringify(safeUsername) + ')" style="background:#ef4444; padding: 4px 8px; font-size: 11px; border: none; border-radius: 4px; cursor: pointer; margin: 2px;">Забанить</button>') + '</td>';
+                    ? '<button onclick="window.unbanUser(' + JSON.stringify(u.id) + ', ' + JSON.stringify(u.username || '') + ')" style="background:#10b981; padding: 4px 8px; font-size: 11px; border: none; border-radius: 4px; cursor: pointer; margin: 2px;">Разбанить</button>'
+                    : '<button onclick="window.banUser(' + JSON.stringify(u.id) + ', ' + JSON.stringify(u.username || '') + ')" style="background:#ef4444; padding: 4px 8px; font-size: 11px; border: none; border-radius: 4px; cursor: pointer; margin: 2px;">Забанить</button>') + '</td>';
                 tr.setAttribute('data-user-id', u.id);
                 tr.onclick = () => window.showUserDetails(u.id);
               usersBody.appendChild(tr);
@@ -1065,10 +1053,6 @@ app.get("/admin", (req, res) => {
             const createdAt = user.createdAt ? new Date(user.createdAt).toLocaleString('ru-RU') : '';
             const safeAvatar = user.avatar ? escapeHtml(user.avatar) : '';
             const userAvatar = safeAvatar ? '<img src="' + safeAvatar + '" style="width: 64px; height: 64px; border-radius: 50%; margin-bottom: 12px;" />' : '<div style="width: 64px; height: 64px; border-radius: 50%; background: #374151; display: flex; align-items: center; justify-content: center; font-size: 24px; margin-bottom: 12px;">' + escapeHtml(user.username ? user.username.charAt(0).toUpperCase() : '?') + '</div>';
-            const safeUsername = escapeJs(user.username || '');
-            const safeLastIp = escapeJs(user.lastIp || '');
-            const safeUserId = escapeJs(user.id || '');
-            
             const chats = (activity && activity.chats) || [];
             const recentMessages = (activity && activity.recentMessages) || [];
             
@@ -1080,7 +1064,7 @@ app.get("/admin", (req, res) => {
               + '<strong>Email:</strong> ' + escapeHtml(user.email || '-') + '<br>'
               + '<strong>Bio:</strong> ' + escapeHtml(user.bio || '-') + '<br>'
               + '<strong>Статус:</strong> ' + statusIcon + ' ' + statusText + '<br>'
-              + '<strong>Последний IP:</strong> <a href="#" onclick="window.setIPAndCloseModal(\'' + safeLastIp + '\'); return false;" style="color: #60a5fa;">' + escapeHtml(user.lastIp || '-') + '</a><br>'
+              + '<strong>Последний IP:</strong> <a href="#" onclick="window.setIPAndCloseModal(' + JSON.stringify(user.lastIp || '') + '); return false;" style="color: #60a5fa;">' + escapeHtml(user.lastIp || '-') + '</a><br>'
               + '<strong>Последняя активность:</strong> ' + escapeHtml(lastSeen) + '<br>'
               + '<strong>Дата регистрации:</strong> ' + escapeHtml(createdAt) + '<br>';
             
@@ -1122,10 +1106,10 @@ app.get("/admin", (req, res) => {
             
             html += '<div style="display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap;">'
               + (user.status === 'banned' 
-                ? '<button onclick="window.unbanUser(\'' + safeUserId + '\', \'' + safeUsername + '\'); window.closeUserModal();" style="background:#10b981; padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; flex: 1; min-width: 150px;">✅ Разбанить</button>'
-                : '<button onclick="window.banUser(\'' + safeUserId + '\', \'' + safeUsername + '\'); window.closeUserModal();" style="background:#ef4444; padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; flex: 1; min-width: 150px;">🚫 Забанить</button>')
+                ? '<button onclick="window.unbanUser(' + JSON.stringify(user.id) + ', ' + JSON.stringify(user.username || '') + '); window.closeUserModal();" style="background:#10b981; padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; flex: 1; min-width: 150px;">✅ Разбанить</button>'
+                : '<button onclick="window.banUser(' + JSON.stringify(user.id) + ', ' + JSON.stringify(user.username || '') + '); window.closeUserModal();" style="background:#ef4444; padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; flex: 1; min-width: 150px;">🚫 Забанить</button>')
               + (user.lastIp && user.lastIp !== '-' 
-                ? '<button onclick="window.banUserIP(\'' + safeLastIp + '\'); window.closeUserModal();" style="background:#f59e0b; padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; flex: 1; min-width: 150px;">🛡️ Забанить IP</button>'
+                ? '<button onclick="window.banUserIP(' + JSON.stringify(user.lastIp || '') + '); window.closeUserModal();" style="background:#f59e0b; padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; flex: 1; min-width: 150px;">🛡️ Забанить IP</button>'
                 : '')
               + '</div></div>';
             
