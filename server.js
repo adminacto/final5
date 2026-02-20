@@ -1034,8 +1034,8 @@ app.get("/admin", (req, res) => {
             logoutBtn.onclick = () => { clearToken(); setState(false); };
           }
           
-          // Функция показа модального окна с деталями пользователя
-          function showUserModal(user) {
+          // Функция показа модального окна с деталями пользователя и активностью
+          function showUserModal(user, activity) {
             const modal = document.getElementById('userModal');
             const content = document.getElementById('userModalContent');
             if(!modal || !content) return;
@@ -1048,7 +1048,10 @@ app.get("/admin", (req, res) => {
             const safeUsername = (user.username||'').replace(/'/g, "\\'").replace(/"/g, '&quot;');
             const safeLastIp = (user.lastIp||'').replace(/'/g, "\\'");
             
-            content.innerHTML = '<div style="line-height: 1.8;">'
+            const chats = (activity && activity.chats) || [];
+            const recentMessages = (activity && activity.recentMessages) || [];
+            
+            let html = '<div style="line-height: 1.8;">'
               + '<div style="text-align: center; margin-bottom: 20px;">' + userAvatar + '</div>'
               + '<div style="background: #1f2937; padding: 12px; border-radius: 8px; margin-bottom: 12px;"><strong>ID:</strong> <code style="background: #0b1220; padding: 2px 6px; border-radius: 4px; font-size: 11px;">' + user.id + '</code></div>'
               + '<strong>Username:</strong> ' + (user.username||'') + (user.isVerified ? ' <span style="color: #fbbf24;">✓ Верифицирован</span>' : '') + '<br>'
@@ -1058,8 +1061,45 @@ app.get("/admin", (req, res) => {
               + '<strong>Статус:</strong> ' + statusIcon + ' ' + statusText + '<br>'
               + '<strong>Последний IP:</strong> <a href="#" onclick="window.setIPAndCloseModal(\'' + safeLastIp + '\'); return false;" style="color: #60a5fa;">' + (user.lastIp||'-') + '</a><br>'
               + '<strong>Последняя активность:</strong> ' + lastSeen + '<br>'
-              + '<strong>Дата регистрации:</strong> ' + createdAt + '<br><br>'
-              + '<div style="display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap;">'
+              + '<strong>Дата регистрации:</strong> ' + createdAt + '<br>';
+            
+            if (chats.length) {
+              html += '<hr style="border-color:#1f2937; margin: 16px 0;">'
+                + '<h4 style="margin: 0 0 8px;">💬 Недавние чаты пользователя (' + chats.length + ')</h4>'
+                + '<ul style="list-style:none; padding-left:0; margin:0;">';
+              
+              chats.forEach(function(chat){
+                const name = chat.name || (chat.isGroup ? 'Групповой чат' : 'Личный чат');
+                const lastActivity = chat.lastMessageAt ? new Date(chat.lastMessageAt).toLocaleString('ru-RU') : 'Нет сообщений';
+                html += '<li style="padding:6px 0; border-bottom:1px solid #1f2937; font-size:13px;">'
+                  + '<strong>' + name + '</strong>'
+                  + (chat.isGroup ? ' <span style="color:#60a5fa;">[группа]</span>' : ' <span style="color:#9ca3af;">[личный]</span>')
+                  + '<br><span style="color:#9ca3af;">Последняя активность: ' + lastActivity + '</span>'
+                  + '</li>';
+              });
+              
+              html += '</ul>';
+            }
+            
+            if (recentMessages.length) {
+              html += '<hr style="border-color:#1f2937; margin: 16px 0;">'
+                + '<h4 style="margin: 0 0 8px;">📝 Последние сообщения пользователя (' + recentMessages.length + ')</h4>'
+                + '<div style="max-height: 240px; overflow:auto; border-radius:8px; border:1px solid #1f2937; padding:8px; background:#020617;">';
+              
+              recentMessages.forEach(function(msg){
+                const ts = msg.timestamp ? new Date(msg.timestamp).toLocaleString('ru-RU') : '';
+                const chatName = msg.chatName || msg.chatId || '';
+                const text = msg.content || (msg.type === 'file' ? '[файл]' : '[пустое сообщение]');
+                html += '<div style="padding:6px 0; border-bottom:1px solid #0f172a; font-size:12px;">'
+                  + '<div style="color:#9ca3af; margin-bottom:2px;">' + ts + (chatName ? ' — <span style="color:#60a5fa;">' + chatName + '</span>' : '') + '</div>'
+                  + '<div style="white-space:pre-wrap; word-break:break-word;">' + text + '</div>'
+                  + '</div>';
+              });
+              
+              html += '</div>';
+            }
+            
+            html += '<div style="display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap;">'
               + (user.status === 'banned' 
                 ? '<button onclick="window.unbanUser(\'' + user.id + '\', \'' + safeUsername + '\'); window.closeUserModal();" style="background:#10b981; padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; flex: 1; min-width: 150px;">✅ Разбанить</button>'
                 : '<button onclick="window.banUser(\'' + user.id + '\', \'' + safeUsername + '\'); window.closeUserModal();" style="background:#ef4444; padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; flex: 1; min-width: 150px;">🚫 Забанить</button>')
@@ -1068,6 +1108,8 @@ app.get("/admin", (req, res) => {
                 : '')
               + '</div></div>';
             
+            content.innerHTML = html;
+            
             modal.style.display = 'flex';
             modal.classList.remove('hidden');
           }
@@ -1075,16 +1117,18 @@ app.get("/admin", (req, res) => {
           // Показать детали пользователя
           async function showUserDetails(userId) {
             try{
-              const res = await fetch('/admin/users?search=' + userId, { 
+              const res = await fetch('/admin/user-activity/' + encodeURIComponent(userId), { 
                 headers: { 'Authorization': 'Bearer ' + getToken() } 
               });
               const data = await res.json();
-              const user = data.items && data.items.find(u => u.id === userId);
-              if(!user) {
-                alert('Пользователь не найден');
+              if(!res.ok || !data || !data.user) {
+                alert((data && data.error) || 'Пользователь не найден');
                 return;
               }
-              showUserModal(user);
+              showUserModal(data.user, { 
+                chats: data.chats || [], 
+                recentMessages: data.recentMessages || [] 
+              });
             }catch(e){
               console.error('Show user details error:', e);
               alert('Ошибка загрузки данных пользователя');
@@ -1457,6 +1501,84 @@ app.get("/admin/users", requireAdmin, async (req, res) => {
   } catch (e) {
     console.error("Admin users error:", e)
     res.status(500).json({ error: "Ошибка получения пользователей" })
+  }
+})
+
+app.get("/admin/user-activity/:userId", requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params || {}
+    if (!userId) {
+      return res.status(400).json({ error: "userId обязателен" })
+    }
+
+    const user = await User.findById(userId, "_id username fullName email lastSeen isOnline lastIp status isVerified createdAt bio avatar").lean()
+    if (!user) {
+      return res.status(404).json({ error: "Пользователь не найден" })
+    }
+
+    const chats = await Chat.find({ participants: user._id }, "_id name isGroup").lean()
+
+    const recentMessagesRaw = await Message.find({ sender: user._id })
+      .sort({ timestamp: -1 })
+      .limit(50)
+      .lean()
+
+    const chatMap = new Map(
+      chats.map((chat) => [chat._id.toString(), chat]),
+    )
+
+    const recentMessages = recentMessagesRaw.map((msg) => {
+      const chatId = String(msg.chat)
+      const chat = chatMap.get(chatId)
+      return {
+        id: msg._id.toString(),
+        chatId,
+        chatName: chat?.name || "",
+        content: msg.content || "",
+        type: msg.type || "text",
+        timestamp: msg.timestamp || null,
+      }
+    })
+
+    const chatActivity = await Promise.all(
+      chats.map(async (chat) => {
+        const lastMessage = await Message.findOne({ chat: chat._id })
+          .sort({ timestamp: -1 })
+          .select("timestamp")
+          .lean()
+
+        return {
+          id: chat._id.toString(),
+          name: chat.name || (chat.isGroup ? "Групповой чат" : "Личный чат"),
+          isGroup: !!chat.isGroup,
+          lastMessageAt: lastMessage?.timestamp || null,
+        }
+      }),
+    )
+
+    const mappedUser = {
+      id: user._id.toString(),
+      username: user.username,
+      fullName: user.fullName,
+      email: user.email,
+      isOnline: !!user.isOnline,
+      lastSeen: user.lastSeen,
+      lastIp: user.lastIp || "",
+      status: user.status || "offline",
+      isVerified: !!user.isVerified,
+      createdAt: user.createdAt,
+      bio: user.bio || "",
+      avatar: user.avatar || "",
+    }
+
+    res.json({
+      user: mappedUser,
+      chats: chatActivity,
+      recentMessages,
+    })
+  } catch (e) {
+    console.error("Admin user-activity error:", e)
+    res.status(500).json({ error: "Ошибка получения активности пользователя" })
   }
 })
 
