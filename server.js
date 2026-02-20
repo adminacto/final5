@@ -606,11 +606,17 @@ app.get("/admin", (req, res) => {
         <div class="v-center"></div>
       </div>
       <div class="wrap">
-        <h1>ACTOGRAM Admin</h1>
-        <p class="muted">JWT-панель управления: вход и бан по IP</p>
+        <div class="row" style="justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <h1 id="titleMain" style="margin: 0;">ACTOGRAM Admin</h1>
+          <select id="langSelect" style="height: 36px; border-radius: 8px; border: 1px solid #374151; background: #020617; color: #e2e8f0; padding: 0 10px;">
+            <option value="ru">Русский</option>
+            <option value="uz">O‘zbekcha</option>
+          </select>
+        </div>
+        <p id="tagline" class="muted">JWT-панель управления: вход и бан по IP</p>
 
         <div id="loginCard" class="card">
-          <h3>Вход администратора</h3>
+          <h3 id="loginTitle">Вход администратора</h3>
           <div class="row" style="margin-top: 8px;">
             <input id="username" placeholder="Логин" value="Mumtozbekk" />
             <input id="password" type="password" placeholder="Пароль" />
@@ -621,36 +627,36 @@ app.get("/admin", (req, res) => {
 
         <div id="adminCard" class="card hidden">
           <div class="row" style="justify-content: space-between; margin-bottom: 20px;">
-            <h2 style="margin: 0;">🔐 Админ-панель ACTOGRAM</h2>
+            <h2 id="adminHeader" style="margin: 0;">🔐 Админ-панель ACTOGRAM</h2>
             <button id="logoutBtn" style="background:#ef4444;">Выйти</button>
           </div>
 
           <!-- Статистика -->
           <div id="statsCard" class="card" style="background: linear-gradient(135deg, #1e293b, #334155); margin-top: 0;">
-            <h3 style="margin-top: 0;">📊 Статистика</h3>
+            <h3 id="statsTitle" style="margin-top: 0;">📊 Статистика</h3>
             <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px;">
               <div style="text-align: center; padding: 12px; background: rgba(0,0,0,0.3); border-radius: 8px;">
                 <div style="font-size: 24px; font-weight: bold; color: #60a5fa;" id="statTotal">0</div>
-                <div style="font-size: 12px; color: #94a3b8;">Всего</div>
+                <div id="statTotalLabel" style="font-size: 12px; color: #94a3b8;">Всего</div>
               </div>
               <div style="text-align: center; padding: 12px; background: rgba(0,0,0,0.3); border-radius: 8px;">
                 <div style="font-size: 24px; font-weight: bold; color: #34d399;" id="statOnline">0</div>
-                <div style="font-size: 12px; color: #94a3b8;">Онлайн</div>
+                <div id="statOnlineLabel" style="font-size: 12px; color: #94a3b8;">Онлайн</div>
               </div>
               <div style="text-align: center; padding: 12px; background: rgba(0,0,0,0.3); border-radius: 8px;">
                 <div style="font-size: 24px; font-weight: bold; color: #f87171;" id="statBanned">0</div>
-                <div style="font-size: 12px; color: #94a3b8;">Забанено</div>
+                <div id="statBannedLabel" style="font-size: 12px; color: #94a3b8;">Забанено</div>
               </div>
               <div style="text-align: center; padding: 12px; background: rgba(0,0,0,0.3); border-radius: 8px;">
                 <div style="font-size: 24px; font-weight: bold; color: #fbbf24;" id="statVerified">0</div>
-                <div style="font-size: 12px; color: #94a3b8;">Верифицировано</div>
+                <div id="statVerifiedLabel" style="font-size: 12px; color: #94a3b8;">Верифицировано</div>
               </div>
             </div>
           </div>
 
           <!-- Блокировка IP -->
           <div class="card">
-            <h3>🛡️ Блокировка IP</h3>
+            <h3 id="ipBlockTitle">🛡️ Блокировка IP</h3>
           <div class="row" style="margin-top: 8px;">
               <input id="ipInput" placeholder="IP адрес (например 1.2.3.4)" style="flex: 1;" />
               <input id="reasonInput" placeholder="Причина (необязательно)" style="flex: 1;" />
@@ -661,7 +667,7 @@ app.get("/admin", (req, res) => {
 
             <div style="margin-top: 16px;">
               <div class="row" style="justify-content: space-between; margin-bottom: 8px;">
-                <h4 style="margin: 0;">Забаненные IP</h4>
+                <h4 id="bannedIpTitle" style="margin: 0;">Забаненные IP</h4>
                 <button id="refreshBansBtn" style="background:#475569; font-size: 12px; padding: 6px 12px;">Обновить</button>
           </div>
               <div style="max-height: 200px; overflow:auto; border:1px solid #1f2937; border-radius:8px;">
@@ -683,7 +689,7 @@ app.get("/admin", (req, res) => {
 
           <!-- Управление пользователями -->
           <div class="card">
-            <h3>👥 Управление пользователями</h3>
+            <h3 id="usersTitle">👥 Управление пользователями</h3>
             
             <!-- Поиск и фильтры -->
             <div style="margin-top: 16px;">
@@ -842,6 +848,187 @@ app.get("/admin", (req, res) => {
           const div = document.createElement('div');
           div.textContent = String(text);
           return div.innerHTML;
+        }
+
+        // Переводы RU / UZ
+        const translations = {
+          ru: {
+            titleMain: "ACTOGRAM Admin",
+            tagline: "JWT-панель управления: вход и бан по IP",
+            loginTitle: "Вход администратора",
+            usernamePlaceholder: "Логин",
+            passwordPlaceholder: "Пароль",
+            loginButton: "Войти",
+            logoutButton: "Выйти",
+            adminHeader: "🔐 Админ-панель ACTOGRAM",
+            statsTitle: "📊 Статистика",
+            statTotalLabel: "Всего",
+            statOnlineLabel: "Онлайн",
+            statBannedLabel: "Забанено",
+            statVerifiedLabel: "Верифицировано",
+            ipBlockTitle: "🛡️ Блокировка IP",
+            ipInputPlaceholder: "IP адрес (например 1.2.3.4)",
+            reasonPlaceholder: "Причина (необязательно)",
+            banIpButton: "Забанить IP",
+            unbanIpButton: "Разбанить IP",
+            bannedIpTitle: "Забаненные IP",
+            refreshBansButton: "Обновить",
+            usersTitle: "👥 Управление пользователями",
+            searchPlaceholder: "🔍 Поиск по username, email, IP, имени...",
+            filterAll: "Все пользователи",
+            filterOnline: "Онлайн",
+            filterOffline: "Оффлайн",
+            filterBanned: "Забаненные",
+            filterVerified: "Верифицированные",
+            filterUnverified: "Неверифицированные",
+            sortLastSeenDesc: "Последняя активность (новые)",
+            sortLastSeenAsc: "Последняя активность (старые)",
+            sortCreatedDesc: "Дата регистрации (новые)",
+            sortCreatedAsc: "Дата регистрации (старые)",
+            sortUsernameAsc: "Username (А-Я)",
+            sortUsernameDesc: "Username (Я-А)",
+            refreshUsersButton: "Обновить"
+          },
+          uz: {
+            titleMain: "ACTOGRAM Admin",
+            tagline: "JWT-panel: kirish va IP bloklash",
+            loginTitle: "Administrator kirishi",
+            usernamePlaceholder: "Login",
+            passwordPlaceholder: "Parol",
+            loginButton: "Kirish",
+            logoutButton: "Chiqish",
+            adminHeader: "🔐 ACTOGRAM admin paneli",
+            statsTitle: "📊 Statistika",
+            statTotalLabel: "Jami",
+            statOnlineLabel: "Onlayn",
+            statBannedLabel: "Bloklangan",
+            statVerifiedLabel: "Tasdiqlangan",
+            ipBlockTitle: "🛡️ IP bloklash",
+            ipInputPlaceholder: "IP manzil (masalan 1.2.3.4)",
+            reasonPlaceholder: "Sabab (majburiy emas)",
+            banIpButton: "IP ni bloklash",
+            unbanIpButton: "IP ni ochish",
+            bannedIpTitle: "Bloklangan IPlar",
+            refreshBansButton: "Yangilash",
+            usersTitle: "👥 Foydalanuvchilarni boshqarish",
+            searchPlaceholder: "🔍 username, email, IP, ism bo'yicha qidirish...",
+            filterAll: "Barcha foydalanuvchilar",
+            filterOnline: "Onlayn",
+            filterOffline: "Oflayn",
+            filterBanned: "Bloklangan",
+            filterVerified: "Tasdiqlangan",
+            filterUnverified: "Tasdiqlanmagan",
+            sortLastSeenDesc: "Oxirgi faollik (yangi)",
+            sortLastSeenAsc: "Oxirgi faollik (eski)",
+            sortCreatedDesc: "Ro'yxatdan o'tish sanasi (yangi)",
+            sortCreatedAsc: "Ro'yxatdan o'tish sanasi (eski)",
+            sortUsernameAsc: "Username (A-Z)",
+            sortUsernameDesc: "Username (Z-A)",
+            refreshUsersButton: "Yangilash"
+          }
+        };
+
+        let currentLang = localStorage.getItem('admin_lang') || 'ru';
+
+        function applyLang(lang) {
+          const t = translations[lang] || translations.ru;
+          currentLang = lang;
+          localStorage.setItem('admin_lang', lang);
+
+          const root = document.documentElement;
+          if (root) root.lang = lang === 'uz' ? 'uz' : 'ru';
+
+          const titleMain = document.getElementById('titleMain');
+          if (titleMain) titleMain.textContent = t.titleMain;
+
+          const tagline = document.getElementById('tagline');
+          if (tagline) tagline.textContent = t.tagline;
+
+          const loginTitle = document.getElementById('loginTitle');
+          if (loginTitle) loginTitle.textContent = t.loginTitle;
+
+          const usernameInput = document.getElementById('username');
+          if (usernameInput) usernameInput.placeholder = t.usernamePlaceholder;
+
+          const passwordInput = document.getElementById('password');
+          if (passwordInput) passwordInput.placeholder = t.passwordPlaceholder;
+
+          const loginBtn = document.getElementById('loginBtn');
+          if (loginBtn) loginBtn.textContent = t.loginButton;
+
+          const logoutBtn = document.getElementById('logoutBtn');
+          if (logoutBtn) logoutBtn.textContent = t.logoutButton;
+
+          const adminHeader = document.getElementById('adminHeader');
+          if (adminHeader) adminHeader.textContent = t.adminHeader;
+
+          const statsTitle = document.getElementById('statsTitle');
+          if (statsTitle) statsTitle.textContent = t.statsTitle;
+
+          const statTotalLabel = document.getElementById('statTotalLabel');
+          if (statTotalLabel) statTotalLabel.textContent = t.statTotalLabel;
+
+          const statOnlineLabel = document.getElementById('statOnlineLabel');
+          if (statOnlineLabel) statOnlineLabel.textContent = t.statOnlineLabel;
+
+          const statBannedLabel = document.getElementById('statBannedLabel');
+          if (statBannedLabel) statBannedLabel.textContent = t.statBannedLabel;
+
+          const statVerifiedLabel = document.getElementById('statVerifiedLabel');
+          if (statVerifiedLabel) statVerifiedLabel.textContent = t.statVerifiedLabel;
+
+          const ipBlockTitle = document.getElementById('ipBlockTitle');
+          if (ipBlockTitle) ipBlockTitle.textContent = t.ipBlockTitle;
+
+          const ipInput = document.getElementById('ipInput');
+          if (ipInput) ipInput.placeholder = t.ipInputPlaceholder;
+
+          const reasonInput = document.getElementById('reasonInput');
+          if (reasonInput) reasonInput.placeholder = t.reasonPlaceholder;
+
+          const banBtn = document.getElementById('banBtn');
+          if (banBtn) banBtn.textContent = t.banIpButton;
+
+          const unbanBtn = document.getElementById('unbanBtn');
+          if (unbanBtn) unbanBtn.textContent = t.unbanIpButton;
+
+          const bannedIpTitle = document.getElementById('bannedIpTitle');
+          if (bannedIpTitle) bannedIpTitle.textContent = t.bannedIpTitle;
+
+          const refreshBansBtn = document.getElementById('refreshBansBtn');
+          if (refreshBansBtn) refreshBansBtn.textContent = t.refreshBansButton;
+
+          const usersTitle = document.getElementById('usersTitle');
+          if (usersTitle) usersTitle.textContent = t.usersTitle;
+
+          const searchInput = document.getElementById('searchInput');
+          if (searchInput) searchInput.placeholder = t.searchPlaceholder;
+
+          const filterSelect = document.getElementById('filterSelect');
+          if (filterSelect && filterSelect.options.length >= 6) {
+            filterSelect.options[0].textContent = t.filterAll;
+            filterSelect.options[1].textContent = t.filterOnline;
+            filterSelect.options[2].textContent = t.filterOffline;
+            filterSelect.options[3].textContent = t.filterBanned;
+            filterSelect.options[4].textContent = t.filterVerified;
+            filterSelect.options[5].textContent = t.filterUnverified;
+          }
+
+          const sortSelect = document.getElementById('sortSelect');
+          if (sortSelect && sortSelect.options.length >= 6) {
+            sortSelect.options[0].textContent = t.sortLastSeenDesc;
+            sortSelect.options[1].textContent = t.sortLastSeenAsc;
+            sortSelect.options[2].textContent = t.sortCreatedDesc;
+            sortSelect.options[3].textContent = t.sortCreatedAsc;
+            sortSelect.options[4].textContent = t.sortUsernameAsc;
+            sortSelect.options[5].textContent = t.sortUsernameDesc;
+          }
+
+          const refreshUsersBtn = document.getElementById('refreshUsersBtn');
+          if (refreshUsersBtn) refreshUsersBtn.textContent = t.refreshUsersButton;
+
+          const langSelect = document.getElementById('langSelect');
+          if (langSelect) langSelect.value = lang;
         }
         
           // Загрузка банов
@@ -1368,8 +1555,19 @@ app.get("/admin", (req, res) => {
             };
           }
 
-          // Проверяем, есть ли сохраненный токен
-        setState(!!getToken());
+          // Язык из localStorage
+          const langSelect = document.getElementById('langSelect');
+          if (langSelect) {
+            langSelect.value = currentLang;
+            langSelect.onchange = () => {
+              const v = langSelect.value === 'uz' ? 'uz' : 'ru';
+              applyLang(v);
+            };
+          }
+
+          // Применяем язык и проверяем токен
+          applyLang(currentLang);
+          setState(!!getToken());
         }
         
         // Инициализация при загрузке страницы
